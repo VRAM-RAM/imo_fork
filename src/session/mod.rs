@@ -548,7 +548,7 @@ impl DebugSession {
 
     /// Get and update the process base address
     pub fn update_process_addresses(&mut self) -> Result<(), CacheSetupError> {
-        syscalls::update_process_addresses(self, self.pid)
+        syscalls::update_process_addresses(self)
     }
 
     // =================================================================
