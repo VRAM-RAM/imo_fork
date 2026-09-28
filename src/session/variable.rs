@@ -100,10 +100,7 @@ pub fn to_buffer(collection: &[DebugValue]) -> Vec<u8> {
 
 impl DebugValue {
     fn is_tuple(&self) -> bool {
-        match self {
-            DebugValue::Tuple(..) => true,
-            _ => false,
-        }
+        matches!(self, DebugValue::Tuple(..))
     }
 }
 

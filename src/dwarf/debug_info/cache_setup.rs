@@ -5,17 +5,17 @@
  * and integrated into the project's native debugger architecture.
  */
 
-use gimli::{constants, EndianSlice, Reader as _, RelocateReader, RunTimeEndian, UnitRef};
+use gimli::{EndianSlice, Reader as _, RelocateReader, RunTimeEndian, UnitRef, constants};
 use object::{Object, ObjectSection};
 use std::borrow;
 
 use crate::dwarf::debug_info::{
+    Abi, DebuggerMetadataCache, DwarfType, EnumVariant, Enumerator, GenericField, Reader,
+    RelocationMap, ScopeCacheNode, StructField, TypeCacheNode,
     error::DebugInfoError,
     utils::{
         extract_inline_node, extract_lexical_block_node, extract_subprogram_node, extract_variable,
     },
-    Abi, DebuggerMetadataCache, DwarfType, EnumVariant, Enumerator, GenericField, Reader,
-    RelocationMap, ScopeCacheNode, StructField, TypeCacheNode,
 };
 
 macro_rules! get_global_offset {
@@ -66,7 +66,7 @@ pub fn setup_cache(
         gimli::RunTimeEndian::Big
     };
 
-    dump_file(&object, info_cache)?;
+    dump_file(object, info_cache)?;
 
     Ok(())
 }
@@ -515,10 +515,9 @@ fn dump_unit<'a>(
                                     }
                                 }
 
-                                if let (Some(name), Some(type_offset)) = (name, type_offset) {
-                                    if !generics.iter().any(|g| g.name == name) {
+                                if let (Some(name), Some(type_offset)) = (name, type_offset)
+                                    && !generics.iter().any(|g| g.name == name) {
                                         generics.push(GenericField { name, type_offset });
-                                    }
                                 }
                             }
                             // Descend to the variant part
@@ -560,7 +559,7 @@ fn dump_unit<'a>(
                                                     gimli::DW_AT_discr_value => {
                                                         discr_value = match attr.value() {
                                                             gimli::AttributeValue::Data1(v) => {
-                                                                Some(v as u8)
+                                                                Some(v)
                                                             }
                                                             gimli::AttributeValue::Data2(v) => {
                                                                 Some(v as u8)

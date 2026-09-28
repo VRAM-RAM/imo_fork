@@ -28,5 +28,5 @@ pub enum CacheSetupError {
     AddressRange,
 
     #[error("Failed to read process base address")]
-    BaseAddress
+    BaseAddress,
 }

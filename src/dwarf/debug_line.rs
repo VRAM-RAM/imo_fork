@@ -96,11 +96,11 @@ fn update_session_cache(
                     path.clone_from(&comp_dir);
 
                     // The directory index 0 is defined to correspond to the compilation unit directory.
-                    if file.directory_index() != 0 {
-                        if let Some(dir) = file.directory(header) {
+                    if file.directory_index() != 0
+                        && let Some(dir) = file.directory(header) {
                             path.push(unit.attr_string(dir)?.to_string_lossy().as_ref());
-                        }
                     }
+                    
 
                     path.push(
                         unit.attr_string(file.path_name())?
@@ -138,7 +138,7 @@ fn update_session_cache(
                 // Only push to line index if this row starts a new line or swicthed to a
                 // different file
 
-                if last_indexed_file.map_or(true, |f| f != file_id) {
+                if last_indexed_file != Some(file_id) {
                     registered_lines.clear();
                     last_indexed_file = Some(file_id);
                 }
@@ -151,8 +151,8 @@ fn update_session_cache(
                 let is_already_registered = registered_lines.contains(&line);
                 let relative_address = row.address();
 
-                if let Some((start_addr, location)) = active_range_start {
-                    if relative_address > start_addr && location.line != 0 {
+                if let Some((start_addr, location)) = active_range_start
+                    && relative_address > start_addr && location.line != 0 {
                         session.line_row.push(LineRow {
                             location,
                             start_address: start_addr,
@@ -160,7 +160,6 @@ fn update_session_cache(
                             is_stmt: row.is_stmt(),
                         });
                     }
-                }
 
                 if row.end_sequence() {
                     active_range_start = None;
@@ -169,7 +168,7 @@ fn update_session_cache(
                         relative_address,
                         SourceLocation {
                             file: file_id,
-                            line: line,
+                            line,
                         },
                     ));
                 }
