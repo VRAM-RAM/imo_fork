@@ -1,12 +1,11 @@
 use owo_colors::OwoColorize;
 
 /// Trim file path for the main source code
-pub fn trim_file_path<P: AsRef<std::path::Path>>(path: &P) -> String {
-    let path = path.as_ref();
-    match path.file_name() {
-        Some(p) => p.to_string_lossy().to_string(),
-        None => "main".to_string(),
-    }
+pub fn trim_file_path<P: AsRef<std::path::Path>>(path: P) -> String {
+    path.as_ref()
+        .file_name()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "main".to_string())
 }
 
 /// Display the code in a user friendly format
