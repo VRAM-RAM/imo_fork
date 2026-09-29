@@ -1,11 +1,11 @@
 use owo_colors::OwoColorize;
 
-// TODO: Make this safe for any OS
-// For example windows uses backslash instead of forward slash
 /// Trim file path for the main source code
-pub fn trim_file_path<P: AsRef<std::path::Path>>(path: &P) -> &str {
-    let path = path.as_ref().to_str().unwrap();
-    path.split("/").last().unwrap_or("main")
+pub fn trim_file_path<P: AsRef<std::path::Path>>(path: P) -> String {
+    path.as_ref()
+        .file_name()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "main".to_string())
 }
 
 /// Display the code in a user friendly format

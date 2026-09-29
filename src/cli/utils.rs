@@ -6,7 +6,7 @@ use std::{
 use owo_colors::OwoColorize;
 use rustc_hash::FxHashSet;
 
-use crate::session::{breakpoint, DebugSession};
+use crate::session::{DebugSession, breakpoint};
 use crate::sys::SystemError;
 use crate::utils::trim_file_path;
 
@@ -176,7 +176,6 @@ pub fn handle_breakpoint_setting(
     match result {
         Ok(breakpoint::BreakpointMutationResult::Created { count, target }) => {
             handle_break_metadata(session, count, target, line_number);
-            return;
         }
         Ok(breakpoint::BreakpointMutationResult::NotFound) => {
             display_error!("Could not find breakpoint")
@@ -530,7 +529,7 @@ macro_rules! get_breakpoint_address {
                 }
             }
         } else {
-            match u64::from_str_radix(&$arg[1..], 10) {
+            match $arg[1..].parse::<u64>() {
                 Ok(addr) => addr,
                 Err(_) => {
                     eprintln!("Could not convert decimal address");

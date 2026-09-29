@@ -1,7 +1,7 @@
 use nix::sys::ptrace;
 use nix::sys::ptrace::AddressType;
 use nix::sys::signal;
-use nix::sys::uio::{process_vm_readv, RemoteIoVec};
+use nix::sys::uio::{RemoteIoVec, process_vm_readv};
 use std::fs::read_to_string;
 use std::io::IoSliceMut;
 

@@ -17,10 +17,10 @@ use crate::dwarf::debug_info::cache_setup::setup_cache;
 use crate::dwarf::debug_info::error::DebugInfoError;
 use crate::dwarf::evaluate_frame_base_bytes;
 use crate::session::error::VariableParseError;
-use crate::session::variable::{to_buffer, DebugStructField, DebugValue, WrapperKind};
+use crate::session::variable::{DebugStructField, DebugValue, WrapperKind, to_buffer};
 use crate::sys::os;
-use crate::sys::{os::syscalls, registers::RegisterViewer};
 use crate::sys::{ProcessMemoryMap, SystemError};
+use crate::sys::{os::syscalls, registers::RegisterViewer};
 use crate::types::UniqueFileId;
 
 // The max allocation allowed for parsing each variable (100 MB)
@@ -32,7 +32,7 @@ pub type Reader<'data> =
 #[derive(Debug, Default)]
 pub struct RelocationMap(object::read::RelocationMap);
 
-impl<'a> gimli::read::Relocate for &'a RelocationMap {
+impl gimli::read::Relocate for &RelocationMap {
     fn relocate_address(&self, offset: usize, value: u64) -> gimli::Result<u64> {
         Ok(self.0.relocate(offset as u64, value))
     }
@@ -278,7 +278,7 @@ impl DwarfType {
                 if name == "usize" {
                     return Ok(Some(DebugValue::Usize(raw_data as u64)));
                 } else if name == "isize" {
-                    return Ok(Some(DebugValue::Isize(raw_data as i64)));
+                    return Ok(Some(DebugValue::Isize(raw_data)));
                 }
                 match encoding {
                     // Boolean
@@ -390,7 +390,7 @@ impl DwarfType {
                 for i in 0..*count {
                     let Some(var) = ty.dwarf_type.to_debug_value(
                         type_index,
-                        address + offset_num * i as u64,
+                        address + offset_num * i,
                         pid,
                         process_range,
                     )?
@@ -424,10 +424,10 @@ impl DwarfType {
                     return Ok(None);
                 };
 
-                return Ok(Some(DebugValue::Enum {
+                Ok(Some(DebugValue::Enum {
                     name: name.to_owned(),
                     inner_name,
-                }));
+                }))
             }
             DwarfType::Variant {
                 name,
@@ -446,12 +446,11 @@ impl DwarfType {
                 let active_variant = variants
                     .iter()
                     .find(|v| {
-                        if let Some(tag_byte) = tag_byte {
-                            if let Some(value) = v.discr_value {
+                        if let Some(tag_byte) = tag_byte
+                            && let Some(value) = v.discr_value {
                                 return tag_byte == value;
-                            }
                         }
-                        return false;
+                        false
                     })
                     .or_else(|| variants.iter().find(|v| v.discr_value == None));
 
@@ -504,19 +503,19 @@ impl DwarfType {
                             }));
                         }
 
-                        return Ok(Some(DebugValue::Variant {
+                        Ok(Some(DebugValue::Variant {
                             name: inner_name,
                             field: Some(Box::new(inner_value)),
-                        }));
+                        }))
                     } else {
-                        return Ok(Some(DebugValue::Err(
+                        Ok(Some(DebugValue::Err(
                             "Could not find active field variant".to_string(),
-                        )));
+                        )))
                     }
                 } else {
-                    return Ok(Some(DebugValue::Err(
+                    Ok(Some(DebugValue::Err(
                         "Could not find active enum".to_string(),
-                    )));
+                    )))
                 }
             }
             DwarfType::Structure {
@@ -921,7 +920,7 @@ impl DwarfType {
                     fields: values,
                 };
 
-                return Ok(Some(structure));
+                Ok(Some(structure))
             }
             _ => todo!(),
         }
@@ -962,7 +961,7 @@ impl ExecutionScope {
     pub fn get_bytes(&self) -> Option<&Vec<u8>> {
         match self {
             ExecutionScope::Function { bytes, .. } => {
-                bytes.as_ref().map_or(None, |bytes| Some(bytes))
+                bytes.as_ref().map_or(None, Some)
             }
             ExecutionScope::Inlined { .. } | ExecutionScope::LexicalBlock => None,
         }
@@ -976,17 +975,11 @@ impl ExecutionScope {
     }
 
     pub fn is_inline(&self) -> bool {
-        match self {
-            ExecutionScope::Inlined { .. } => true,
-            _ => false,
-        }
+        matches!(self, ExecutionScope::Inlined { .. })
     }
 
     pub fn is_func(&self) -> bool {
-        match self {
-            ExecutionScope::Function { .. } => true,
-            _ => false,
-        }
+        matches!(self, ExecutionScope::Function { .. })
     }
 }
 
@@ -1024,10 +1017,9 @@ impl DebugVariable {
                 gimli::EvaluationResult::Complete => {
                     let pieces = evaluation.result();
 
-                    if let Some(piece) = pieces.first() {
-                        if let gimli::Location::Address { address } = piece.location {
+                    if let Some(piece) = pieces.first()
+                        && let gimli::Location::Address { address } = piece.location {
                             return Ok(Some(address));
-                        }
                     }
                     break;
                 }
@@ -1183,8 +1175,8 @@ impl DebuggerMetadataCache {
 
     pub fn is_in_inline(&self, pc: u64) -> bool {
         for scope in self.execution_scopes.iter() {
-            if scope.is_in_scope(pc) {
-                if scope.find_active_scope(pc).is_some() {
+            if scope.is_in_scope(pc)
+                && scope.find_active_scope(pc).is_some() {
                     // Update down the tree
                     // An inline can call a function
                     if scope.scope.is_func() {
@@ -1192,7 +1184,6 @@ impl DebuggerMetadataCache {
                     }
                     if scope.scope.is_inline() {
                         return true;
-                    }
                 }
             }
         }
@@ -1208,8 +1199,8 @@ impl DebuggerMetadataCache {
         let mut scopes = Vec::new();
 
         for scope in self.execution_scopes.iter() {
-            if scope.is_in_scope(pc) {
-                if scope.find_active_scope(pc).is_some() {
+            if scope.is_in_scope(pc)
+                && scope.find_active_scope(pc).is_some() {
                     if scope.scope.is_inline() {
                         scopes.push(scope);
                     } else if scope.scope.is_func() {
@@ -1217,7 +1208,6 @@ impl DebuggerMetadataCache {
                     }
                 }
             }
-        }
 
         scopes
     }

@@ -14,13 +14,13 @@ fn main() {
         exit(1);
     }
 
-    let target_binary = &args[1];
+    let arg = &args[1];
 
     let mut full_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    full_path.push(target_binary);
+    full_path.push(arg);
 
     if !full_path.exists() {
-        eprintln!("Error: Binary '{}' does not exist.", target_binary);
+        eprintln!("Error: Binary '{}' does not exist.", arg);
         exit(1);
     }
 
@@ -38,7 +38,7 @@ fn main() {
 
     #[cfg(target_os = "linux")]
     {
-        if let Err(e) = imo::linux::debug(&mut rl, target_binary) {
+        if let Err(e) = imo::linux::debug(&mut rl, arg) {
             eprintln!("Failed to start debugger: {e}");
         }
     }

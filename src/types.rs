@@ -219,16 +219,10 @@ pub enum CurrentStopCmd {
 
 impl CurrentStopCmd {
     pub fn is_completed(&self) -> bool {
-        match self {
-            CurrentStopCmd::Completed => true,
-            _ => false,
-        }
+        matches!(self, CurrentStopCmd::Completed)
     }
 
     pub fn is_idle(&self) -> bool {
-        match self {
-            CurrentStopCmd::Idle => true,
-            _ => false,
-        }
+        matches!(self, CurrentStopCmd::Idle)
     }
 }

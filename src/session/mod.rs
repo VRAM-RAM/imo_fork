@@ -20,7 +20,7 @@ use crate::types::{
 use crate::{
     dwarf::{
         self,
-        debug_frame::{setup_session_debug_frame, RawDebugFrame},
+        debug_frame::{RawDebugFrame, setup_session_debug_frame},
         debug_info::{ActiveParamsContext, DebuggerMetadataCache},
         error::CacheSetupError,
     },
@@ -707,22 +707,20 @@ impl DebugSession {
         // Store these breakpoints and their indices
         for (idx, opt_bp) in self.breakpoint_index_tracker.iter_mut().enumerate() {
             if let Some(bp) = opt_bp {
-                if !filter_by_file {
-                    if bp.line == line_number {
+                if !filter_by_file 
+                    && bp.line == line_number {
                         if let Some(removed_bp) = opt_bp.take() {
                             cleared_breakpoints.push(removed_bp);
                             bp_idx.push(idx + 1);
                         }
-                    }
                 } else {
                     if let Some(bp_file) = bp.file.to_str() {
                         // Safe unwrap since this is the path where the file is Some
-                        if bp.line == line_number && bp_file.ends_with(file.unwrap()) {
-                            if let Some(removed_bp) = opt_bp.take() {
+                        if bp.line == line_number && bp_file.ends_with(file.unwrap())
+                            && let Some(removed_bp) = opt_bp.take() {
                                 cleared_breakpoints.push(removed_bp);
                                 bp_idx.push(idx + 1);
                             }
-                        }
                     } else {
                         eprintln!("[Warning] Failed to convert file path at index {}", idx)
                     }

@@ -34,7 +34,7 @@ pub fn extract_variable<'a>(
             }
             gimli::DW_AT_decl_line => {
                 if let gimli::AttributeValue::Udata(decl_line) = attr.value() {
-                    line = Some(decl_line as u64);
+                    line = Some(decl_line);
                 }
             }
             _ => continue,
