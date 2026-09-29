@@ -38,7 +38,7 @@ fn main() {
 
     #[cfg(target_os = "linux")]
     {
-        if let Err(e) = imo::linux::debug(&mut rl, target_binary) {
+        if let Err(e) = imo::linux::debug(&mut rl, arg) {
             eprintln!("Failed to start debugger: {e}");
         }
     }
