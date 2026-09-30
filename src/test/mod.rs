@@ -1,6 +1,8 @@
 use std::fs::File;
 use std::io::{BufRead, Write};
 
+mod test_guard;
+
 // SAFETY: Run this test on a single thread for now with the
 // 'cargo test -- --test-threads=1' command
 // This is because all tests write to the same file so it has to be synchronous
@@ -107,6 +109,8 @@ fn create_process() -> std::process::Child {
 
 #[cfg(test)]
 fn write_and_read(child: &mut std::process::Child, cmd: &str) -> String {
+    use crate::test::test_guard::TestOutputBase;
+
     let mut stdin = child.stdin.take().expect("Failed to open stdin");
     let stdout = child.stdout.take().expect("Failed to open stdout");
     let mut reader = std::io::BufReader::new(stdout);
