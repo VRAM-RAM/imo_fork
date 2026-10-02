@@ -22,7 +22,7 @@ fn unique_test_path(path: &Path) -> PathBuf {
 /// \
 /// Every test gets an unique path, source (`.rs`) file and binary file, so that the tests can be executed in parallel.
 /// \
-/// When dropped, [`TestOutputBase`] automatically suppresses all the artifacts it generated.
+/// When dropped, [`TestOutputBase`] automatically suppresses all the artifacts it generated, and kill the associated [`Child`] processes.
 /// \
 /// Example : 
 /// ```rust
@@ -33,9 +33,8 @@ fn unique_test_path(path: &Path) -> PathBuf {
 ///         "base.clear();"
 ///     ]);
 ///     
-///     let mut child = base.create_process();
-///     child.kill().unwrap();
-/// } // When exiting the scope, and so dropping the `base`, the unique test directory is cleared.
+///     let index: usize = base.create_process();
+/// } // When exiting the scope, and so dropping the `base`, the unique test directory is cleared, and the child is killed
 /// ```
 pub struct TestOutputBase {
     /// The generated unique test path (see [unique_test_path] for more informations)
@@ -46,6 +45,9 @@ pub struct TestOutputBase {
 
     /// The path to the `out` binary file
     binary_path: PathBuf,
+
+    /// A [`Vec`] of [`Child`] processes, launched by [`TestOutputBase::create_process`], and killed on [`Drop`]
+    childs: Vec<Child>
 }
 
 #[allow(dead_code)]
@@ -62,7 +64,7 @@ impl TestOutputBase {
         fs::create_dir_all(&path).expect("Failed to create the test directory");
         let rs_path = path.join("out.rs");
         let bin_path = path.join("out");
-        Self { dir: path, source_path: rs_path, binary_path: bin_path  }
+        Self { dir: path, source_path: rs_path, binary_path: bin_path, childs: vec![]  }
     }
 
     /// Writes `rust` source code to the `out.rs` file.
@@ -75,9 +77,11 @@ impl TestOutputBase {
     /// ```rust
     /// let base = TestOutputBase::new();
     /// base.write_to_output(&["use foo::display::foo_disp;"]
-    ///     &["let foo: String = String::from(\"foo\");"],
-    ///     ["let display_result = foo_disp(foo);"],
-    ///     ["if display_result.is_err() { eprintln!(\"Error while displaying foo!\"); }"]
+    ///     &[
+    ///     "let foo: String = String::from(\"foo\");",
+    ///     "let display_result = foo_disp(foo);",
+    ///     "if display_result.is_err() { eprintln!(\"Error while displaying foo!\"); }"
+    ///     ]
     /// );
     /// ```
     /// \
@@ -129,16 +133,18 @@ impl TestOutputBase {
     /// Compiles the `out.rs` source file into the `out` binary file, calling `rustc`.
     pub fn compile(&self) {
         std::process::Command::new("rustc")
-        .arg("-g")
-        .arg("-o")
-        .arg(&self.binary_path)
-        .arg(&self.source_path)
-        .output()
-        .expect("Failed to compile code");
+            .arg("-g")
+            .arg("-o")
+            .arg(&self.binary_path)
+            .arg(&self.source_path)
+            .output()
+            .expect("Failed to compile code");
     }
 
     /// Compiles the `out.rs` source file calling [`TestOutputBase::compile`], and runs the debugger.
-    pub fn create_process(&self) -> Child {
+    /// \
+    /// Returns the index of the [`Child`] process.
+    pub fn create_process(&mut self) -> usize {
         self.compile();
 
         let child = std::process::Command::new("cargo")
@@ -149,15 +155,61 @@ impl TestOutputBase {
             .spawn()
             .expect("Failed to start debugger");
 
-        child
+        let index = self.childs.len();
+
+        self.childs.push(child);
+
+        index
     }
 
-    /// Clears the test directory. Prints an error message if removing fails (when `--nocapture` is enabled).
+    /// Returns a mutable reference of the [`Child`] process of the given index. Returns [`None`] if the index is out of bounds.
+    pub fn child_as_mut_ref(&mut self, index: usize) -> Option<&mut Child> {
+        self.childs.get_mut(index)
+    }
+
+    /// Clears the test directory, and kills all the associated [`Child`] processes calling [`TestOutputBase::kill_all_childs`]. Prints an error message if removing fails (when `--nocapture` is enabled).
     /// \
     /// Warning : the unique test directory and its content are deleted, but not the root `/test/out/` directory.
-    pub fn clear(&self) {
+    pub fn clear(&mut self) {
+        self.kill_all_childs();
+
         if let Err(e) = std::fs::remove_dir_all(&self.dir) {
             eprintln!("Error while removing the directory : {}", e)
+        }
+
+    }
+
+    /// Kills all [`Child`]s that the `childs` [`Vec`] contains, and clears it. 
+    /// \
+    /// Prints an error message if removing fails (when `--nocapture` is enabled).
+    pub fn kill_all_childs(&mut self) {
+        for child in &mut self.childs {
+            if let Err(e) = child.kill() {
+                eprintln!("Failed to kill the child process : {}", e);
+            }
+
+            match child.wait() {
+                Ok(status) => println!("Child process exited with code : {:?}", status),
+                Err(e) => eprintln!("Erro waiting for process {}: {}", child.id(), e)
+            }
+        }
+
+        self.childs.clear();
+    }
+
+    /// Kills a [`Child`] of given index. If the [`Child`] exists, it is killed and removed from the [`Vec`].
+    pub fn kill_child(&mut self, index: usize) {
+        if let Some(child) = self.childs.get_mut(index) {
+            if let Err(e) = child.kill() {
+                eprintln!("Failed to kill the child process : {}", e);
+            }
+
+            match child.wait() {
+                Ok(status) => println!("Child process exited with code : {:?}", status),
+                Err(e) => eprintln!("Erro waiting for process {}: {}", child.id(), e)
+            }
+
+            self.childs.remove(index);
         }
     }
 }

@@ -1,14 +1,14 @@
 //! `imo`'s test suite.
 //! \
-//! **Safety:** the test suite works with single & multithreading.
-//! \
+//! **Safety:** the test suite works with single & multithreading. `Child` processes are killed on Drop, and the `/out` directory is automatically cleaned.
+//! \ 
 //! You can run the test suite using simply `cargo test`.
 
 use std::io::{BufRead, Write};
 
-use crate::test::test_guard::TestOutputBase;
+use crate::test::test_base::TestOutputBase;
 
-mod test_guard;
+mod test_base;
 
 
 #[cfg(test)]
@@ -48,7 +48,7 @@ macro_rules! cmp {
 
 #[test]
 fn boolean() {
-    let base = TestOutputBase::new();
+    let mut base = TestOutputBase::new();
 
     base.write_to_output(&[], 
 &[
@@ -60,30 +60,30 @@ fn boolean() {
             ]
     );
 
-    let mut child = base.create_process();
+    let index = base.create_process();
 
-    let _ = write_and_read(&mut child, "b 6");
+    let child = base.child_as_mut_ref(index).unwrap();
 
-    let _ = write_and_read(&mut child, "run");
+    let _ = write_and_read(child, "b 6");
 
-    let a = write_and_read(&mut child, "p a");
+    let _ = write_and_read(child, "run");
+
+    let a = write_and_read(child, "p a");
     cmp!(&a, "true");
 
-    let b = write_and_read(&mut child, "p b");
+    let b = write_and_read(child, "p b");
     cmp!(&b, "false");
 
-    let c = write_and_read(&mut child, "p c");
+    let c = write_and_read(child, "p c");
     cmp!(&c, "true");
 
-    let d = write_and_read(&mut child, "p d");
+    let d = write_and_read(child, "p d");
     cmp!(&d, "false");
-
-    child.kill().unwrap();
 }
 
 #[test]
 fn integer() {
-    let base = TestOutputBase::new();
+    let mut base = TestOutputBase::new();
 
     base.write_to_output(&[], 
 &[
@@ -96,30 +96,32 @@ fn integer() {
     );
 
 
-    let mut child = base.create_process();
+    let index = base.create_process();
 
-    let _ = write_and_read(&mut child, "b 6");
+    let child = base.child_as_mut_ref(index).unwrap();
 
-    let _ = write_and_read(&mut child, "run");
+    let _ = write_and_read(child, "b 6");
 
-    let x = write_and_read(&mut child, "p x");
+    let _ = write_and_read(child, "run");
+
+    let x = write_and_read(child, "p x");
     cmp!(&x, "-15");
 
-    let p = write_and_read(&mut child, "p p");
+    let p = write_and_read(child, "p p");
     cmp!(&p, "-2");
 
-    let d = write_and_read(&mut child, "p d");
+    let d = write_and_read(child, "p d");
     cmp!(&d, "12");
 
-    let e = write_and_read(&mut child, "p e");
+    let e = write_and_read(child, "p e");
     cmp!(&e, "13");
 
-    child.kill().unwrap();
+    
 }
 
 #[test]
 fn char() {
-    let base = TestOutputBase::new();
+    let mut base = TestOutputBase::new();
 
     base.write_to_output(&[], 
 &[
@@ -131,30 +133,32 @@ fn char() {
             ]
     );
 
-    let mut child = base.create_process();
+    let index = base.create_process();
     
-    let _ = write_and_read(&mut child, "b 6");
+    let child = base.child_as_mut_ref(index).unwrap();
 
-    let _ = write_and_read(&mut child, "run");
+    let _ = write_and_read(child, "b 6");
 
-    let c = write_and_read(&mut child, "p c");
+    let _ = write_and_read(child, "run");
+
+    let c = write_and_read(child, "p c");
     cmp!(&c, "'c'");
 
-    let y = write_and_read(&mut child, "p y");
+    let y = write_and_read(child, "p y");
     cmp!(&y, "'y'");
 
-    let d = write_and_read(&mut child, "p d");
+    let d = write_and_read(child, "p d");
     cmp!(&d, "'d'");
 
-    let n = write_and_read(&mut child, "p n");
+    let n = write_and_read(child, "p n");
     cmp!(&n, "'2'");
 
-    child.kill().unwrap();
+    
 }
 
 #[test]
 fn static_str() {
-    let base = TestOutputBase::new();
+    let mut base = TestOutputBase::new();
 
     base.write_to_output(&[], 
 &[
@@ -165,26 +169,29 @@ fn static_str() {
             ]
     );
 
-    let mut child = base.create_process();
-    let _ = write_and_read(&mut child, "b 5");
+    let index = base.create_process();
+    
+    let child = base.child_as_mut_ref(index).unwrap();
 
-    let _ = write_and_read(&mut child, "run");
+    let _ = write_and_read(child, "b 5");
 
-    let foo = write_and_read(&mut child, "p foo");
+    let _ = write_and_read(child, "run");
+
+    let foo = write_and_read(child, "p foo");
     cmp!(&foo, "\"foo\"");
 
-    let bar = write_and_read(&mut child, "p bar");
+    let bar = write_and_read(child, "p bar");
     cmp!(&bar, "\"bar\"");
 
-    let baz = write_and_read(&mut child, "p baz");
+    let baz = write_and_read(child, "p baz");
     cmp!(&baz, "\"baz\"");
 
-    child.kill().unwrap();
+    
 }
 
 #[test]
 fn string() {
-    let base = TestOutputBase::new();
+    let mut base = TestOutputBase::new();
 
     base.write_to_output(&[], 
 &[
@@ -195,27 +202,30 @@ fn string() {
             ]
     );
 
-    let mut child = base.create_process();
+    let index = base.create_process();
     
-    let _ = write_and_read(&mut child, "b 5");
+    let child = base.child_as_mut_ref(index).unwrap();
 
-    let _ = write_and_read(&mut child, "run");
+    
+    let _ = write_and_read(child, "b 5");
 
-    let foo = write_and_read(&mut child, "p foo");
+    let _ = write_and_read(child, "run");
+
+    let foo = write_and_read(child, "p foo");
     cmp!(&foo, "\"foo\"");
 
-    let bar = write_and_read(&mut child, "p bar");
+    let bar = write_and_read(child, "p bar");
     cmp!(&bar, "\"bar\"");
 
-    let baz = write_and_read(&mut child, "p baz");
+    let baz = write_and_read(child, "p baz");
     cmp!(&baz, "\"baz\"");
 
-    child.kill().unwrap();
+    
 }
 
 #[test]
 fn path() {
-    let base = TestOutputBase::new();
+    let mut base = TestOutputBase::new();
 
     base.write_to_output(&["use std::path::Path;"], 
 &[
@@ -226,27 +236,30 @@ fn path() {
             ]
     );
 
-    let mut child = base.create_process();
+    let index = base.create_process();
     
-    let _ = write_and_read(&mut child, "b 6");
+    let child = base.child_as_mut_ref(index).unwrap();
 
-    let _ = write_and_read(&mut child, "run");
+    
+    let _ = write_and_read(child, "b 6");
 
-    let foo = write_and_read(&mut child, "p foo");
+    let _ = write_and_read(child, "run");
+
+    let foo = write_and_read(child, "p foo");
     cmp!(&foo, "Path(\"foo\")");
 
-    let bar = write_and_read(&mut child, "p bar");
+    let bar = write_and_read(child, "p bar");
     cmp!(&bar, "Path(\"bar\")");
 
-    let baz = write_and_read(&mut child, "p baz");
+    let baz = write_and_read(child, "p baz");
     cmp!(&baz, "Path(\"baz\")");
 
-    child.kill().unwrap();
+    
 }
 
 #[test]
 fn path_buf() {
-    let base = TestOutputBase::new();
+    let mut base = TestOutputBase::new();
 
     base.write_to_output(&["use std::path::PathBuf;"], 
 &[
@@ -257,20 +270,23 @@ fn path_buf() {
             ]
     );
 
-    let mut child = base.create_process();
+    let index = base.create_process();
     
-    let _ = write_and_read(&mut child, "b 6");
+    let child = base.child_as_mut_ref(index).unwrap();
 
-    let _ = write_and_read(&mut child, "run");
+    
+    let _ = write_and_read(child, "b 6");
 
-    let foo = write_and_read(&mut child, "p foo");
+    let _ = write_and_read(child, "run");
+
+    let foo = write_and_read(child, "p foo");
     cmp!(&foo, "PathBuf(\"foo\")");
 
-    let bar = write_and_read(&mut child, "p bar");
+    let bar = write_and_read(child, "p bar");
     cmp!(&bar, "PathBuf(\"bar\")");
 
-    let baz = write_and_read(&mut child, "p baz");
+    let baz = write_and_read(child, "p baz");
     cmp!(&baz, "PathBuf(\"baz\")");
 
-    child.kill().unwrap();
+    
 }
