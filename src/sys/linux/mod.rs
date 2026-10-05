@@ -1,6 +1,7 @@
 pub mod breakpoint;
 pub mod error;
 pub mod syscalls;
+pub mod watchpoints;
 
 use nix::libc::user_regs_struct;
 

@@ -3,6 +3,7 @@ pub mod error;
 pub mod execution;
 pub mod types;
 pub mod variable;
+pub mod watchpoint;
 
 use gimli::UnwindSection;
 use rustc_hash::FxHashMap;
@@ -64,6 +65,7 @@ pub struct DebugSession {
 
     /// Different for each os
     pub active_breakpoints: FxHashMap<u64, ManagedBreakpoint>,
+
     pub pid: os::ProcessId,
 }
 
