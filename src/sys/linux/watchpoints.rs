@@ -40,7 +40,10 @@ pub enum HardwareDebugRegister {
     Dr3,
 }
 
-/// The access 'kind' the user wants. ()
+/// The access 'kind' the user wants.
+/// - Read : catch it, and notify the user if the variable is read
+/// - Write : catch it, and notify the user if the variable is written
+/// - ReadWrite : catch it, and notify the user if the variable is written or read.
 #[derive(Debug, Default)]
 pub enum WatchAccess {
     Read,
