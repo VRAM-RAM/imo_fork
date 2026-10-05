@@ -2,6 +2,10 @@ use crate::sys::os;
 use std::fmt;
 
 #[derive(Debug, Clone, Copy)]
+/// Stores three registers used during debugging :
+/// - stack pointer (rsp), points to the top of call stack
+/// - base pointer (rbp), frame pointer for accessing local vars or args
+/// - instruction pointer (rip), the address of next instruction
 pub struct VirtualRegisters {
     pub stack_pointer: u64,
     pub base_pointer: u64,
@@ -9,6 +13,7 @@ pub struct VirtualRegisters {
 }
 
 #[derive(Debug, Clone, Copy)]
+/// Stores and convert the OS' registers into [`VirtualRegisters`]
 pub struct RegisterViewer {
     pub regs: os::PlatformRegStruct,
 }
@@ -20,6 +25,7 @@ impl RegisterViewer {
 }
 
 impl Into<VirtualRegisters> for RegisterViewer {
+    /// From the OS' registers, returns a [`VirtualRegisters`].
     fn into(self) -> VirtualRegisters {
         VirtualRegisters {
             stack_pointer: self.stack_pointer(),

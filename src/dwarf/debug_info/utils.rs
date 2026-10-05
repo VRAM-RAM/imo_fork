@@ -2,7 +2,7 @@ use gimli::{DebuggingInformationEntry, Reader as _, UnitRef};
 
 use crate::{
     dwarf::debug_info::{AddressRange, DebugVariable, ExecutionScope, Reader, ScopeCacheNode},
-    types::UniqueFileId,
+    common::UniqueFileId,
 };
 
 pub fn extract_variable<'a>(

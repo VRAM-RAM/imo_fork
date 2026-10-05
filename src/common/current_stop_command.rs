@@ -1,6 +1,6 @@
-use crate::common::StringId;
+use super::StringId;
 
-// The command to be ran when the debugger hits a sigtrap
+/// The command to be ran when the debugger hits a sigtrap.
 #[derive(Default, Debug)]
 pub enum CurrentStopCmd {
     SingleStep,
@@ -50,10 +50,10 @@ pub enum CurrentStopCmd {
 
 impl CurrentStopCmd {
     pub fn is_completed(&self) -> bool {
-        matches!(self, Self::Completed)
+        matches!(self, CurrentStopCmd::Completed)
     }
 
     pub fn is_idle(&self) -> bool {
-        matches!(self, Self::Idle)
+        matches!(self, CurrentStopCmd::Idle)
     }
 }

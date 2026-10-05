@@ -11,6 +11,7 @@ pub fn trim_file_path<P: AsRef<std::path::Path>>(path: P) -> String {
 /// Display the code in a user friendly format
 pub fn display_source_code(f: &mut std::fmt::Formatter<'_>, code: &str) -> std::fmt::Result {
     if code.starts_with("//") {
+        // Displays the comments in gray
         write!(f, "{}", code.fg_rgb::<118, 118, 118>())?;
         return Ok(());
     }

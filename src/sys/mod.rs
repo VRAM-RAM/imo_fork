@@ -10,6 +10,7 @@ pub mod linux;
 pub use linux as os;
 
 #[derive(Debug, Default)]
+/// Stores the entire memory map of the process, in a [`Vec`] of [`MemoryRegion`]s.
 pub struct ProcessMemoryMap {
     ranges: Vec<MemoryRegion>,
 }
@@ -18,11 +19,13 @@ impl ProcessMemoryMap {
     pub fn from(ranges: Vec<MemoryRegion>) -> Self {
         Self { ranges }
     }
+
     pub fn is_ip_valid(&self, ip: u64) -> bool {
         self.ranges
             .iter()
             .any(|r| r.within_range(ip) && r.is_executable)
     }
+    
     pub fn is_address_readable(&self, address: u64) -> bool {
         self.ranges
             .iter()
@@ -31,6 +34,7 @@ impl ProcessMemoryMap {
 }
 
 #[derive(Debug, Default)]
+/// A **memory** region. Stores its size (start_address and end_address), and its constraints (writable, readable, executable).
 pub struct MemoryRegion {
     pub start_address: u64,
     pub end_address: u64,

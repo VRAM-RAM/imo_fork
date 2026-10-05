@@ -22,8 +22,10 @@ macro_rules! set_regs {
     };
 }
 
-/// Begin the parent and child processes
-/// Child Process executes the binary
+/// Begin the parent and child processes.
+/// \
+/// Child Process executes the binary.
+/// \
 /// Parent Process begins the loop that monitors child process
 pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerError> {
     let fork_result = unsafe { fork() }.map_err(|e| LinuxError::Ptrace(e))?;
@@ -38,9 +40,11 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
             let path = std::ffi::CString::new(binary_path).map_err(|e| LinuxError::CString(e))?;
 
             let err = nix::unistd::execv(&path, &[&path]).unwrap_err();
+            
             eprintln!("Failed to execute process: {}", err);
             Ok(())
         }
+
         ForkResult::Parent { child } => {
             // Catch the initial SIGSTOP from the child
             let _status_1 = wait!(child)?;
