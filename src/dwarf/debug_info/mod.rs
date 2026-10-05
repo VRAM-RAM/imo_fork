@@ -21,7 +21,7 @@ use crate::session::variable::{DebugStructField, DebugValue, WrapperKind, to_buf
 use crate::sys::os;
 use crate::sys::{ProcessMemoryMap, SystemError};
 use crate::sys::{os::syscalls, registers::RegisterViewer};
-use crate::types::UniqueFileId;
+use crate::common::UniqueFileId;
 
 // The max allocation allowed for parsing each variable (100 MB)
 const MAX_ALLOCATION_SIZE: u64 = 100 * 1024 * 1024;

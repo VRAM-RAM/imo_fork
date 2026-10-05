@@ -1,4 +1,4 @@
-use crate::types::StringId;
+use crate::common::StringId;
 
 // The command to be ran when the debugger hits a sigtrap
 #[derive(Default, Debug)]

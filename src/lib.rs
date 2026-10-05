@@ -7,5 +7,5 @@ pub mod session;
 pub mod sys;
 #[cfg(test)]
 pub mod test;
-pub mod types;
+pub mod common;
 pub mod utils;
