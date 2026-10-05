@@ -10,7 +10,7 @@ use rustc_hash::FxHashMap;
 /// \
 /// Example : 
 /// \
-/// ```rust
+/// ```code
 /// pub fn get_current_list_entry(&mut self) -> Option<Vec<SourceCodeDisplay>> {
 /// 
 ///     // SourceLocation { file: StringId(0), line: 42 } for example

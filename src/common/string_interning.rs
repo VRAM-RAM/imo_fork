@@ -11,7 +11,7 @@ pub struct StringId(u16);
 /// \
 /// Example : 
 /// 
-/// ```rust
+/// ```code
 /// pub struct Context {
 ///     interner: StringInterner, 
 ///     foo: Foo,
