@@ -1,7 +1,7 @@
 use owo_colors::OwoColorize;
 use rustc_hash::FxHashMap;
 use std::{path::Path};
-use crate::{session::{DebugSession, operations::{ManagedOperation, OperationResult, OperationTarget, PlatformOperation}}, sys::{SystemError, linux::{PlatformWatchpoint, watchpoint::{HardwareDebugRegister, WatchSize, Watchpoint}}}, utils::trim_file_path};
+use crate::{session::{DebugSession, operations::{ManagedOperation, OperationResult, OperationTarget, PlatformOperation}}, sys::{SystemError, linux::{PlatformWatchpoint, watchpoint::{HardwareDebugRegister, WatchAccess, WatchSize, Watchpoint}}}, utils::trim_file_path};
 use crate::session::ParamType;
 
 /// A [`PlatformWatchpoint`] wrapped in a [`ManagedOperation`]
@@ -16,12 +16,15 @@ impl PlatformOperation for PlatformWatchpoint {}
 #[derive(Debug)]
 pub struct WatchPoints {
     pub watchpoints_index_tracker: Vec<Option<WatchpointData>>,
-    pub active_watchpoints: FxHashMap<u64, ManagedWatchpoint>
+    pub active_watchpoints: FxHashMap<u64, ManagedWatchpoint>,
+    
+    /// Maps DebugRegisters <-> watchpoints addresses
+    pub registers_map: FxHashMap<HardwareDebugRegister, u64>
 }
 
 impl WatchPoints {
     pub fn new() -> Self {
-        Self { watchpoints_index_tracker: vec![], active_watchpoints: FxHashMap::default() }
+        Self { watchpoints_index_tracker: vec![], active_watchpoints: FxHashMap::default(), registers_map: FxHashMap::default() }
     }
 
     pub fn get_mut_from_address(&mut self, addr: u64) -> Option<&mut ManagedWatchpoint> {
@@ -31,10 +34,24 @@ impl WatchPoints {
     pub fn push_data_to_tracker(&mut self, data: WatchpointData) {
         self.watchpoints_index_tracker.push(Some(data));
     }
+
+    pub fn find_free_register_and_update(&mut self, addr: u64) -> Option<HardwareDebugRegister> {
+        for register in [HardwareDebugRegister::Dr0, HardwareDebugRegister::Dr1, HardwareDebugRegister::Dr2, HardwareDebugRegister::Dr3] {
+            if !self.registers_map.contains_key(&register) {
+
+                // We update the hashmap with the new register + address of the watchpoint that uses the register
+                self.registers_map.insert(register, addr);
+
+                return Some(register); 
+            }
+        }
+
+        None
+    }
 }
 
 impl DebugSession {
-    pub fn create_watchpoint(&mut self, var_name: &str, file: &Path, size: WatchSize) -> Result<OperationResult, SystemError> {
+    pub fn create_watchpoint(&mut self, var_name: &str, file: &Path, size: WatchSize, access: WatchAccess) -> Result<OperationResult, SystemError> {
         // Find the current scope
         let node = self.find_specified_param(ParamType::Variable)?;  
         
@@ -56,7 +73,7 @@ impl DebugSession {
                 _ => return Ok(OperationResult::NotFound) 
             };
             
-            self.create_specific_watchpoint(address, size)?;
+            self.create_specific_watchpoint(address, size, access)?;
             
             Ok(OperationResult::Created { count: 1, target: OperationTarget { file: Box::new(file.to_path_buf()), address } })
         } else {
@@ -64,7 +81,7 @@ impl DebugSession {
         }
     }
 
-    pub fn create_specific_watchpoint(&mut self, relative_address: u64, size: WatchSize) -> Result<(), SystemError> {
+    pub fn create_specific_watchpoint(&mut self, relative_address: u64, size: WatchSize, access: WatchAccess) -> Result<(), SystemError> {
         let absolute_address = self.get_absolute_address(relative_address);
 
         // If watchpoint already exists, we dont write : simply increment the reference counter
@@ -73,10 +90,18 @@ impl DebugSession {
             return Ok(());
         }
 
-        todo!();
+        // We try finding a free register
+        let register = self.watchpoints.find_free_register_and_update(relative_address);
+
+        // We create the watchpoint
+        let mut watchpoint = PlatformWatchpoint::new(relative_address, size, access, register);
+
+        // And enable it
+        watchpoint.enable(self.pid)?;
+
+        self.watchpoints.active_watchpoints.insert(absolute_address, ManagedWatchpoint::new(watchpoint));
 
         Ok(())
-
     }
 }
 

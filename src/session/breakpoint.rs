@@ -32,7 +32,6 @@ impl DebugSession {
             return Ok(());
         }
 
-        #[allow(unused_mut)]
         // First time seeing the address
         // Create the breakpoint
         let mut breakpoint = crate::sys::os::PlatformBreakpoint::new(absolute_address);

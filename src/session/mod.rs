@@ -286,6 +286,7 @@ impl DebugSession {
         Ok(stack_frames)
     }
 
+    
     /// Convert the generated Gimli file index to &str
     pub fn file_idx_to_str(&self, file_idx: &crate::common::UniqueFileId) -> Option<&str> {
         let id = self.file_indices.get(file_idx)?;
