@@ -1,12 +1,11 @@
 use std::{
-    io::{self, Write},
-    path::Path,
+    io::{self, Write}, path::{Path, PathBuf},
 };
 
 use owo_colors::OwoColorize;
 use rustc_hash::FxHashSet;
 
-use crate::session::{DebugSession, breakpoint};
+use crate::session::{DebugSession, breakpoint, operations::OperationTarget};
 use crate::sys::SystemError;
 use crate::utils::trim_file_path;
 
@@ -94,7 +93,7 @@ pub fn handle_breakpoint_clearing(
 
 pub fn handle_breakpoint_setting(
     session: &mut DebugSession,
-    line_index: &[breakpoint::BreakpointTarget],
+    line_index: &[OperationTarget],
     line_number: u32,
 ) {
     if line_index.is_empty() {
@@ -102,7 +101,7 @@ pub fn handle_breakpoint_setting(
         return;
     }
 
-    let unique_files: FxHashSet<&Path> = line_index
+    let unique_files: FxHashSet<&PathBuf> = line_index
         .iter()
         .map(|bp| bp.file.as_ref())
         .filter(|file| {
@@ -141,7 +140,7 @@ pub fn handle_breakpoint_setting(
 
     // All addresses are not the same file
     // The user has to specifically pick the file they want
-    let file_choices: Vec<&Path> = unique_files.into_iter().collect();
+    let file_choices: Vec<&PathBuf> = unique_files.into_iter().collect();
 
     println!("Ambigous line number");
     for (idx, file) in file_choices.iter().enumerate() {
@@ -189,12 +188,12 @@ pub fn handle_breakpoint_setting(
 fn handle_break_metadata(
     session: &mut DebugSession,
     bp_for_line: u8,
-    first_bp: breakpoint::BreakpointTarget,
+    first_bp: OperationTarget,
     line_number: u32,
 ) {
     // Handle metadata correctly
-    let first_bp_relative_address = first_bp.relative_address;
-    let trimmed_path = trim_file_path(&first_bp.file);
+    let first_bp_relative_address = first_bp.address;
+    let trimmed_path = trim_file_path(*first_bp.file);
 
     let location_detail = if bp_for_line == 1 {
         format!("line {}", line_number)

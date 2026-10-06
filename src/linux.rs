@@ -356,7 +356,7 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                                         Some(RegisterViewer { regs });
 
                                                     // Replace the 0xCC (INT3) back with the previous instruction
-                                                    bp.breakpoint.disable(pid)?;
+                                                    bp.operation.disable(pid)?;
 
                                                     session.current_cmd = CurrentStopCmd::Completed;
                                                 } else {

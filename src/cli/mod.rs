@@ -92,7 +92,7 @@ pub fn handle_user_debugger_menu(session: &mut DebugSession, rl: &mut DefaultEdi
                         // eg: break 12
 
                         let line_number = parse_line_arg!(arg, u32);
-                        let Some(line_index) = session.get_breakpoint_target(line_number) else {
+                        let Some(line_index) = session.get_operation_target(line_number) else {
                             display_error!("Cannot set breakpoint at target");
                             continue;
                         };
