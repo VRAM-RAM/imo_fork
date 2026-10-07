@@ -1,7 +1,8 @@
+use nix::unistd::Pid;
 use owo_colors::OwoColorize;
 use rustc_hash::FxHashMap;
 use std::{path::Path};
-use crate::{session::{DebugSession, operations::{ManagedOperation, OperationResult, OperationTarget, PlatformOperation}}, sys::{SystemError, linux::{PlatformWatchpoint, watchpoint::{HardwareDebugRegister, WatchAccess, WatchSize, Watchpoint}}}, utils::trim_file_path};
+use crate::{session::{DebugSession, operations::{ManagedOperation, OperationResult, OperationTarget, PlatformOperation}}, sys::{SystemError, linux::{PlatformWatchpoint, watchpoint::{HardwareDebugRegister, WatchAccess, WatchSize}}}, utils::trim_file_path};
 use crate::session::ParamType;
 
 /// A [`PlatformWatchpoint`] wrapped in a [`ManagedOperation`]
@@ -35,6 +36,10 @@ impl WatchPoints {
         self.watchpoints_index_tracker.push(Some(data));
     }
 
+
+    /// If a register is free, returns [`Some`] [`HardwareDebugRegister`] (the available one), and updates the map to insert it as used.
+    /// \
+    /// Else, if no register is available, returns [`None`].
     pub fn find_free_register_and_update(&mut self, addr: u64) -> Option<HardwareDebugRegister> {
         for register in [HardwareDebugRegister::Dr0, HardwareDebugRegister::Dr1, HardwareDebugRegister::Dr2, HardwareDebugRegister::Dr3] {
             if !self.registers_map.contains_key(&register) {
@@ -47,6 +52,33 @@ impl WatchPoints {
         }
 
         None
+    }
+
+   
+
+    /// Clears a [`ManagedWatchpoint`]. If the watchpoint uses a [`HardwareDebugRegister`], clears it too.
+    pub fn clear_watchpoint(&mut self, addr: u64, pid: Pid) -> Result<bool, SystemError> {
+        let mut removed = false;
+
+        if let Some(wp) = self.active_watchpoints.get_mut(&addr) {
+            if wp.ref_count > 1 {
+
+                wp.ref_count -= 1;
+            
+            } else {
+                wp.operation.disable(pid)?;
+                
+                if let Some(reg) = wp.operation.register() {
+                    
+                    // Free a [`HardwareDebugRegister`], removing it in the map.
+                    self.registers_map.remove(reg);
+                }
+
+                removed = true;
+            }
+        }
+
+        Ok(removed)
     }
 }
 
@@ -100,6 +132,14 @@ impl DebugSession {
         watchpoint.enable(self.pid)?;
 
         self.watchpoints.active_watchpoints.insert(absolute_address, ManagedWatchpoint::new(watchpoint));
+
+        Ok(())
+    }
+
+    pub fn clear_specific_watchpoint(&mut self, relative_address: u64) -> Result<(), SystemError> {
+        let absolute_address = self.get_absolute_address(relative_address);
+
+        self.watchpoints.clear_watchpoint(absolute_address, self.pid)?;
 
         Ok(())
     }

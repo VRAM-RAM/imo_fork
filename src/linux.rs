@@ -43,6 +43,9 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
             
             eprintln!("Failed to execute process: {}", err);
             Ok(())
+
+            
+
         }
 
         ForkResult::Parent { child } => {

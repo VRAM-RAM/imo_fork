@@ -126,6 +126,10 @@ impl Watchpoint {
         HardwareDebugRegister::Dr7.write(pid, dr7_value)?;
         Ok(())
     }
+
+    pub fn register(&self) -> &Option<HardwareDebugRegister> {
+        &self.register
+    }
 }
 
 /// The size of the buffer to watch
@@ -288,7 +292,6 @@ impl HardwareDebugRegister {
 
 
 /// The access 'kind' the user wants.
-/// - Read : catch it, and notify the user if the variable is read
 /// - Write : catch it, and notify the user if the variable is written
 /// - ReadWrite : catch it, and notify the user if the variable is written or read.
 #[derive(Debug, Default)]
