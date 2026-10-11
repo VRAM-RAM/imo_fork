@@ -132,12 +132,12 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
         let mut msg_header = mach2::message::mach_msg_header_t::default();
         let option = mach2::message::MACH_RCV_MSG;
         let size = 0;
-        let recieve = 100;
+        let recieve = unsafe { traps::mach_task_self() };
         let timeout = mach2::message::MACH_MSG_TIMEOUT_NONE;
         let notify = mach2::port::MACH_PORT_NULL;
 
         loop {
-            let message = unsafe {
+            kern_return = unsafe {
                 mach2::message::mach_msg(
                     &mut msg_header,
                     option,
@@ -149,7 +149,11 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                 )
             };
 
-            println!("This is the message: {:?}", message);
+            if kern_return != kern_return::KERN_SUCCESS {
+                eprintln!("Error retrieving message");
+            } else {
+                println!("This is the messag header {:?}", msg_header);
+            }
         }
     }
     Ok(())
