@@ -49,7 +49,7 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
 
     let mut child_task_port: mach2::port::mach_port_name_t = 0;
 
-    let kern_return =
+    let mut kern_return =
         unsafe { traps::task_for_pid(traps::mach_task_self(), pid, &mut child_task_port) };
 
     println!("Port: {} and Kern return: {}", child_task_port, kern_return);
@@ -57,19 +57,12 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
     if kern_return == kern_return::KERN_SUCCESS {
         let mut session = session::DebugSession::new(child_task_port, binary_path)?;
         let mut exception_port: mach2::port::mach_port_name_t = 0;
+
         unsafe {
             let mut child_name: mach2::port::mach_port_name_t = 0;
 
-            let kern_return =
-                mach2::traps::task_name_for_pid(child_task_port, pid, &mut child_name);
-
-            if kern_return != kern_return::KERN_SUCCESS {
-                eprintln!("Failed to get child name");
-            }
-
-            println!("Child name: {}", child_name);
             // Allocate the exception port
-            let kern_retun = mach2::mach_port::mach_port_allocate(
+            kern_return = mach2::mach_port::mach_port_allocate(
                 traps::mach_task_self(),
                 mach2::port::MACH_PORT_RIGHT_RECEIVE,
                 &mut exception_port,
@@ -79,9 +72,9 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                 eprintln!("Failed to create exception port")
             }
 
-            let kern_return = mach2::mach_port::mach_port_insert_right(
-                child_task_port,
-                child_name,
+            kern_return = mach2::mach_port::mach_port_insert_right(
+                traps::mach_task_self(),
+                exception_port,
                 exception_port,
                 mach2::message::MACH_MSG_TYPE_MAKE_SEND,
             );
@@ -90,26 +83,26 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                 eprintln!("Failed to insert exception port")
             }
 
-            // Set specific exceptions to be tracked
-            let kern_return = mach2::task::task_set_exception_ports(
+            // set specific exceptions to be tracked
+            kern_return = mach2::task::task_set_exception_ports(
                 child_task_port,
                 mach2::exception_types::EXC_BREAKPOINT,
-                child_name,
+                exception_port,
                 mach2::exception_types::EXCEPTION_DEFAULT as i32,
                 THREAD_STATE64,
             );
 
             if kern_return != kern_return::KERN_SUCCESS {
-                println!("KERN RETURN: {}", kern_return);
-                eprintln!("Failed to set exception port")
+                println!("kern return: {}", kern_return);
+                eprintln!("failed to set exception port")
             }
 
             let mut prev = 0;
-            // Include tracking for when the task finishes
-            let kern_return = mach2::mach_port::mach_port_request_notification(
+            // include tracking for when the task finishes
+            kern_return = mach2::mach_port::mach_port_request_notification(
+                traps::mach_task_self(),
                 child_task_port,
-                child_name,
-                mach2::notify::MACH_NOTIFY_PORT_DESTROYED,
+                mach2::notify::MACH_NOTIFY_DEAD_NAME,
                 0,
                 exception_port,
                 mach2::message::MACH_MSG_TYPE_MAKE_SEND_ONCE,
@@ -119,6 +112,18 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
             if kern_return != kern_return::KERN_SUCCESS {
                 println!("KERN RETURN: {}", kern_return);
                 eprintln!("Failed to create destroyed exception");
+            }
+
+            kern_return = mach2::task::task_suspend(child_task_port);
+
+            if kern_return != kern_return::KERN_SUCCESS {
+                println!("Could not suspend child");
+            }
+
+            let res = libc::ptrace(libc::PT_ATTACHEXC, pid, std::ptr::null_mut(), 0);
+
+            if res != 0 {
+                eprintln!("failed to attach to process");
             }
         }
 

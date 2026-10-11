@@ -37,7 +37,26 @@ impl BreakPoint {
 
         // Write word back to child memory
         unsafe {
-            mach2::vm::mach_vm_write(task_port, self.addr, breakpoint_word as usize, 0);
+            let arr: [u8; 8] = breakpoint_word.to_le_bytes();
+            let ptr = arr.as_ptr() as usize;
+
+            let kern_return = mach2::vm::mach_vm_protect(
+                task_port,
+                self.addr,
+                1,
+                0,
+                mach2::vm_prot::VM_PROT_WRITE,
+            );
+
+            if kern_return != mach2::kern_return::KERN_SUCCESS {
+                eprintln!("Could not protect address : {}", kern_return);
+            }
+
+            let kern_return = mach2::vm::mach_vm_write(task_port, self.addr, ptr, 8);
+
+            if kern_return != mach2::kern_return::KERN_SUCCESS {
+                eprintln!("Could not write to address : {}", kern_return);
+            }
         }
 
         self.is_enabled = true;
