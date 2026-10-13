@@ -260,6 +260,9 @@ pub fn display_help() {
     e / enable          - Enable an existing breakpoint
     dis / disable       - Disable an existing breakpoint
     d / delete          - Delete an existing breakpoint
+    ew / enable-w       - Enable an existing watchpoint
+    disw / dis-watch    - Disable an existing watchpoint
+    dw / del-watch      - Delete an existing watchpoint
     c / cont / continue - Resume program execution
     n / next            - Step over the next line of code
     si / stepi          - Execute the current instructtion

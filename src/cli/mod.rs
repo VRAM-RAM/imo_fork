@@ -166,7 +166,7 @@ pub fn handle_user_debugger_menu(session: &mut DebugSession, rl: &mut DefaultEdi
                             session, 
                             user_index, 
                             |s, idx| s.delete_watchpoint(idx), 
-                            "delete-watchpoint",
+                            "delete ",
                             OperationType::Watchpoint
                         );
                     }
@@ -190,7 +190,7 @@ pub fn handle_user_debugger_menu(session: &mut DebugSession, rl: &mut DefaultEdi
                             session,
                             user_index,
                             |s, idx| s.enable_watchpoint(idx),
-                            "enable",
+                            "enable ",
                             OperationType::Watchpoint
                         );
                     }
@@ -202,7 +202,7 @@ pub fn handle_user_debugger_menu(session: &mut DebugSession, rl: &mut DefaultEdi
                             session,
                             user_index,
                             |s, idx| s.disable_breakpoint(idx),
-                            "disable",
+                            "disable ",
                             OperationType::Breakpoint
                         );
                     }
