@@ -3,6 +3,8 @@ use owo_colors::OwoColorize;
 use std::path::Path;
 use crate::sys::SystemError;
 use crate::utils::trim_file_path;
+use crate::session::operations::OperationResult;
+
 
 /// A [`PlatformBreakpoint`] wrapped in a [`ManagedOperation`]
 pub type ManagedBreakpoint = ManagedOperation<PlatformBreakpoint>;
@@ -91,14 +93,14 @@ impl DebugSession {
     pub fn enable_breakpoint(
         &mut self,
         index: usize,
-    ) -> Result<BreakpointMutationResult, SystemError> {
+    ) -> Result<OperationResult, SystemError> {
         // NOTE: Safe index, bounds are checked by the cli
         let target = self.breakpoint_index_tracker[index].clone();
 
         if let Some(mut data) = target {
             // If already enabled, DO NOTHING
             if data.enabled {
-                return Ok(BreakpointMutationResult::AlreadyInState);
+                return Ok(OperationResult::AlreadyInState);
             }
 
             for bp in data.target.iter() {
@@ -109,24 +111,24 @@ impl DebugSession {
 
             // Update the actual session instance
             self.breakpoint_index_tracker[index] = Some(data);
-            return Ok(BreakpointMutationResult::Updated);
+            return Ok(OperationResult::Updated);
         }
 
-        Ok(BreakpointMutationResult::NotFound)
+        Ok(OperationResult::NotFound)
     }
 
     /// Disable breakpoint and returns true if successful
     pub fn disable_breakpoint(
         &mut self,
         index: usize,
-    ) -> Result<BreakpointMutationResult, SystemError> {
+    ) -> Result<OperationResult, SystemError> {
         // NOTE: Safe index, bounds are checked by the cli
         let target = self.breakpoint_index_tracker[index].clone();
 
         if let Some(mut data) = target {
             // If already disabled, DO NOTHING
             if !data.enabled {
-                return Ok(BreakpointMutationResult::AlreadyInState);
+                return Ok(OperationResult::AlreadyInState);
             }
 
             for bp in data.target.iter() {
@@ -137,17 +139,17 @@ impl DebugSession {
 
             // Update the actual session instance
             self.breakpoint_index_tracker[index] = Some(data);
-            return Ok(BreakpointMutationResult::Updated);
+            return Ok(OperationResult::Updated);
         }
 
-        Ok(BreakpointMutationResult::NotFound)
+        Ok(OperationResult::NotFound)
     }
 
     /// Deletes breakpoint and returns true if successful
     pub fn delete_breakpoint(
         &mut self,
         index: usize,
-    ) -> Result<BreakpointMutationResult, SystemError> {
+    ) -> Result<OperationResult, SystemError> {
         // NOTE: Safe index, bounds are checked by the cli
         let target = self.breakpoint_index_tracker[index].take();
 
@@ -155,10 +157,10 @@ impl DebugSession {
             for bp in data.target.iter() {
                 self.clear_specific_breakpoint(bp.address)?
             }
-            return Ok(BreakpointMutationResult::Updated);
+            return Ok(OperationResult::Updated);
         }
 
-        Ok(BreakpointMutationResult::NotFound)
+        Ok(OperationResult::NotFound)
     }
 
     /// Create breakpoint(s) at a file on a given line number
@@ -167,9 +169,9 @@ impl DebugSession {
         &mut self,
         line_number: u32,
         file: &Path,
-    ) -> Result<BreakpointMutationResult, SystemError> {
+    ) -> Result<OperationResult, SystemError> {
         let Some(line_index) = self.get_operation_target(line_number) else {
-            return Ok(BreakpointMutationResult::NotFound);
+            return Ok(OperationResult::NotFound);
         };
 
         let line_index: Vec<OperationTarget> = line_index
@@ -190,7 +192,7 @@ impl DebugSession {
                 file,
             )));
 
-        Ok(BreakpointMutationResult::Created {
+        Ok(OperationResult::Created {
             count: bp_for_line as u8,
             target: line_index[0].clone(),
         })
@@ -295,10 +297,3 @@ impl std::fmt::Display for BreakpointData {
     }
 }
 
-#[derive(Debug)]
-pub enum BreakpointMutationResult {
-    Created { count: u8, target: OperationTarget },
-    Updated,
-    AlreadyInState,
-    NotFound,
-}

@@ -1,13 +1,13 @@
 use owo_colors::OwoColorize;
-use std::fmt;
+use std::fmt::{self};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DebugStructField {
     pub name: String,
     pub value: DebugValue,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum WrapperKind {
     Box,
     Rc,
@@ -26,8 +26,9 @@ impl Into<String> for WrapperKind {
 
 /// Covers all possible return values for the data found
 /// Add enums
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DebugValue {
+    None,
     Integer(i64),
     Unsigned(u64),
     Usize(u64),
@@ -126,6 +127,7 @@ impl fmt::Display for DebugValue {
                 write!(f, "{:#x}", ptr.bright_blue())?;
                 Ok(())
             }
+            DebugValue::None => write!(f, "{}", "None".blue()),
             DebugValue::Array(arr) => {
                 if arr.is_empty() {
                     write!(f, "[]")?;

@@ -9,6 +9,7 @@ use std::io::{BufRead, Write};
 use crate::test::test_base::TestOutputBase;
 
 mod test_base;
+mod watchpoint;
 
 
 #[cfg(test)]
@@ -37,6 +38,7 @@ fn get_val(dbg_val: &str) -> &str {
     val.trim()
 }
 
+#[macro_export]
 #[cfg(test)]
 macro_rules! cmp {
     ($first:expr, $second:expr) => {
@@ -45,6 +47,9 @@ macro_rules! cmp {
         assert_eq!(raw_str, $second, "Values not equal");
     };
 }
+
+
+pub use crate::cmp;
 
 #[test]
 fn boolean() {

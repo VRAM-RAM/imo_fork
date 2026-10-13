@@ -10,7 +10,11 @@ use gimli::UnwindSection;
 use rustc_hash::FxHashMap;
 use std::path::Path;
 
+#[allow(unused)]
+use crate::dwarf::debug_info::{TypeCacheNode, DwarfType};
+
 use crate::dwarf::debug_info::{DebugVariable, ParamType};
+use crate::session::operations::OperationType;
 use crate::session::types::StackInfo;
 use crate::session::watchpoints::WatchPoints;
 use crate::sys::os::{self, syscalls};
@@ -40,11 +44,12 @@ pub struct DebugSession {
     // Operations data
     pub line_index: FxHashMap<u32, Vec<OperationTarget>>,
 
-    // Watchpoints data
+    // Watchpoints
     pub watchpoints: WatchPoints,
 
-    // Breakpoint data
     pub process_map: ProcessMemoryMap,
+    
+    // Breakpoint data
     pub breakpoint_index_tracker: Vec<Option<BreakpointData>>,
 
     pub line_row: Vec<LineRow>,
@@ -551,6 +556,12 @@ impl DebugSession {
         self.find_line_range(relative_address).map(|l| &l.location)
     }
 
+    /// Retrieves the size of a [`DebugVariable`] by getting the corresponding [`TypeCacheNode`], and calling [`DwarfType::get_byte_size()`]
+    pub fn get_variable_size(&self, var: &DebugVariable) -> Option<u64> {
+        self.metadata.type_index.get(&var.target_type_offset)?
+            .dwarf_type.get_byte_size(&self.metadata.type_index)
+    }
+
     /// Get the relative address from absolute address
     pub fn get_relative_address(&self, absolute_address: u64) -> u64 {
         absolute_address - self.base_address
@@ -686,9 +697,12 @@ impl DebugSession {
         self.metadata.get_func_low_pc(name)
     }
 
-    /// Get the current index of the breakpoint the user is currently on
-    pub fn current_index(&self) -> usize {
+    /// Get the current index of the operation the user is currently on
+    pub fn current_op_index(&self, type_: &OperationType) -> usize {
         // Index is one based for the user
-        self.breakpoint_index_tracker.len()
+        match type_ {
+            OperationType::Breakpoint => self.breakpoint_index_tracker.len(),
+            OperationType::Watchpoint => self.watchpoints.watchpoints_index_tracker.len()
+        }
     }
 }

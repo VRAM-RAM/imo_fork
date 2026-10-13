@@ -2,18 +2,21 @@ pub mod utils;
 
 use rustyline::error::ReadlineError;
 use rustyline::{DefaultEditor, Result};
-
+use crate::cli::utils::handle_watchpoint_setting;
 use crate::dwarf::debug_info::ParamType;
 use crate::session::DebugSession;
 use owo_colors::OwoColorize;
 use utils::{
     display_backtrace_help, display_break_help, display_clear_help, display_continue_help,
-    display_delete_help, display_disable_help, display_enable_help, display_error,
-    display_finish_help, display_help, display_info_help, display_list_help, display_next_help,
-    display_print_help, display_quit_help, display_single_step_help, display_step_help,
-    flush_output, get_breakpoint_address, handle_breakpoint_clearing, handle_breakpoint_setting,
+    display_delete_help, display_disable_help, display_disw_help, display_ew_help,
+    display_enable_help, display_error, display_finish_help, display_help, display_info_help,
+    display_list_help, display_next_help, display_print_help, display_quit_help, 
+    display_single_step_help, display_step_help, display_watch_help, display_wd_help,
+    flush_output, get_address, handle_breakpoint_setting, handle_breakpoint_clearing,
     handle_breakpoint_with_addr, handle_cmd, handle_event_by_index, parse_arg, parse_line_arg,
 };
+
+use crate::session::operations::OperationType;
 
 /// Display an interactive menu at breakpoints
 pub fn handle_user_debugger_menu(session: &mut DebugSession, rl: &mut DefaultEditor) -> Result<()> {
@@ -62,12 +65,29 @@ pub fn handle_user_debugger_menu(session: &mut DebugSession, rl: &mut DefaultEdi
 
                     "f" | "fin" | "finish" => handle_cmd!(session, session.begin_finish()),
 
+                    "w" | "watch" => {
+                        let arg = parse_arg!(parts, "break");
+                        // Handle setting watchpoint if var name and line_number are provided
+                        // Example : watch foo:32
+                        if let Some((var_name, line_num)) = arg.split_once(":") {
+                            let line_number = parse_line_arg!(line_num, u32);
+                            
+                            // By default, the trigger is only when the variable changes of value
+                            let access = parts.next().unwrap_or("c");
+
+                            handle_watchpoint_setting(session, &var_name, access, line_number);
+                            continue;
+                        } else {
+                            display_error!("Please provide the variable name and the corresponding line")
+                        }
+                    }
+
                     "b" | "break" => {
                         let arg = parse_arg!(parts, "break");
 
                         // Breaking at raw addresses
                         if arg.starts_with('*') {
-                            let breakpoint_addr = get_breakpoint_address!(arg);
+                            let breakpoint_addr = get_address!(arg);
                             handle_breakpoint_with_addr!(create, session, breakpoint_addr);
                             continue;
                         }
@@ -77,8 +97,8 @@ pub fn handle_user_debugger_menu(session: &mut DebugSession, rl: &mut DefaultEdi
                         if let Some((file_name, line_num)) = arg.split_once(":") {
                             let line_number = parse_line_arg!(line_num, u32);
 
-                            let line_index =
-                                session.get_specific_breakpoint_target(file_name, line_number);
+                            let line_index = session.get_specific_breakpoint_target(file_name, line_number);
+                            
                             handle_breakpoint_setting(session, &line_index, line_number);
                             continue;
                         }
@@ -115,7 +135,7 @@ pub fn handle_user_debugger_menu(session: &mut DebugSession, rl: &mut DefaultEdi
                         }
 
                         if arg.starts_with('*') {
-                            let breakpoint_addr = get_breakpoint_address!(arg);
+                            let breakpoint_addr = get_address!(arg);
                             handle_breakpoint_with_addr!(clear, session, breakpoint_addr);
                             continue;
                         }
@@ -128,13 +148,26 @@ pub fn handle_user_debugger_menu(session: &mut DebugSession, rl: &mut DefaultEdi
                     }
                     "d" | "delete" => {
                         let arg = parse_arg!(parts, "delete");
-
+                        
                         let user_index = parse_line_arg!(arg, usize);
                         handle_event_by_index(
                             session,
                             user_index,
                             |s, idx| s.delete_breakpoint(idx),
                             "delete",
+                            OperationType::Breakpoint
+                        );
+                    }
+                    "dw" | "delete-w" | "delete-watchpoint" | "del-watch" => {
+                        let arg = parse_arg!(parts, "delete-watchpoint");
+
+                        let user_index = parse_line_arg!(arg, usize);
+                        handle_event_by_index(
+                            session, 
+                            user_index, 
+                            |s, idx| s.delete_watchpoint(idx), 
+                            "delete-watchpoint",
+                            OperationType::Watchpoint
                         );
                     }
                     "e" | "enable" => {
@@ -146,6 +179,19 @@ pub fn handle_user_debugger_menu(session: &mut DebugSession, rl: &mut DefaultEdi
                             user_index,
                             |s, idx| s.enable_breakpoint(idx),
                             "enable",
+                            OperationType::Breakpoint
+                        );
+                    }
+                    "ew" | "enable-w" | "enable-watchpoint" | "ena-watch" => {
+                        let arg = parse_arg!(parts, "enable");
+
+                        let user_index = parse_line_arg!(arg, usize);
+                        handle_event_by_index(
+                            session,
+                            user_index,
+                            |s, idx| s.enable_watchpoint(idx),
+                            "enable",
+                            OperationType::Watchpoint
                         );
                     }
                     "dis" | "disable" => {
@@ -157,6 +203,19 @@ pub fn handle_user_debugger_menu(session: &mut DebugSession, rl: &mut DefaultEdi
                             user_index,
                             |s, idx| s.disable_breakpoint(idx),
                             "disable",
+                            OperationType::Breakpoint
+                        );
+                    }
+                    "disw" | "disable-watchpoint" | "dis-watch" => {
+                        let arg = parse_arg!(parts, "disable");
+
+                        let user_index = parse_line_arg!(arg, usize);
+                        handle_event_by_index(
+                            session,
+                            user_index,
+                            |s, idx| s.disable_watchpoint(idx),
+                            "disable",
+                            OperationType::Watchpoint
                         );
                     }
                     "i" | "info" => {
@@ -173,7 +232,19 @@ pub fn handle_user_debugger_menu(session: &mut DebugSession, rl: &mut DefaultEdi
                                     // NOTE: User index is 1 based
                                     if let Some(bp) = bp {
                                         let user_idx = idx + 1;
-                                        println!("{} {}", user_idx, bp);
+                                        println!("{} {}", user_idx.cyan(), bp);
+                                    }
+                                }
+                            }
+                            "w" | "watch" | "watchpoints" => {
+                                if session.watchpoints.watchpoints_index_tracker.is_empty() {
+                                     println!("No watchpoint found");
+                                    continue;
+                                }
+                                for (idx, wp) in session.watchpoints.watchpoints_index_tracker.iter().enumerate() {
+                                    if let Some(wp) = wp {
+                                        let user_idx = idx + 1;
+                                        println!("{} {}", user_idx.cyan(), wp)
                                     }
                                 }
                             }
@@ -323,6 +394,10 @@ pub fn handle_user_debugger_menu(session: &mut DebugSession, rl: &mut DefaultEdi
                                 "bt" | "backtrace" => display_backtrace_help(),
                                 "l" | "ls" | "list" => display_list_help(),
                                 "q" | "quit" => display_quit_help(),
+                                "w" | "watch" => display_watch_help(),
+                                "dw" => display_wd_help(),
+                                "disw" => display_disw_help(),
+                                "ew" => display_ew_help(),
                                 _ => eprintln!("No help entry exists for {} cmd", arg.red()),
                             }
                             continue;

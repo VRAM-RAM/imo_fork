@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use crate::session::{DebugSession};
+use crate::session::{DebugSession, breakpoint::BreakpointData, watchpoints::WatchpointData};
 
 /// Empty trait, only for keeping linearity in the architecture (so that a `Foo` structure can't be used, by default, in a [`ManagedOperation<T>`])
 /// \
@@ -45,4 +45,28 @@ pub enum OperationResult {
     Updated,
     AlreadyInState,
     NotFound,
+}
+
+#[derive(Debug)]
+pub enum OperationData {
+    Watchpoint(WatchpointData),
+    Breakpoint(BreakpointData),
+}
+
+
+#[derive(Debug)]
+pub enum OperationType {
+    Watchpoint,
+    Breakpoint,
+}
+
+impl std::fmt::Display for OperationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            Self::Breakpoint => "breakpoint",
+            Self::Watchpoint => "watchpoint",
+        };
+
+        write!(f, "{str}")
+    }
 }

@@ -3,11 +3,13 @@ use nix::sys::signal::{Signal, raise};
 use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::{ForkResult, fork};
 use rustyline::DefaultEditor;
-
+use owo_colors::OwoColorize;
 use crate::cli::handle_user_debugger_menu;
+use crate::display_error;
 use crate::error::DebuggerError;
 use crate::session::{DebugSession, execution::CurrentStopCmd};
 use crate::sys::linux::error::LinuxError;
+use crate::sys::linux::watchpoint::watch;
 use crate::sys::registers::RegisterViewer;
 
 macro_rules! wait {
@@ -79,6 +81,16 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                     }
                     WaitStatus::Stopped(pid, sig) => {
                         if let Ok(mut regs) = ptrace::getregs(pid) {
+
+                            if let Ok(accessed_register) = watch(pid) {
+                                for register in accessed_register {
+                                    match session.get_changed_watchpoint_from_register(&register) {
+                                        Ok(Some(result)) => println!("{}", result),
+                                        Err(e) => display_error!("Error while observing a watchpoint : {}", e),
+                                        _ => {}
+                                    }
+                                }
+                            }
                             session.registers = Some(RegisterViewer { regs });
                             // If stop was due to SIGTRAP, do not forward it to the child.
                             // Pass None to let the child continue its execution.

@@ -1,11 +1,11 @@
 use std::{
-    io::{self, Write}, path::{Path, PathBuf},
+    io::{self, Write}, path::{PathBuf},
 };
 
 use owo_colors::OwoColorize;
 use rustc_hash::FxHashSet;
 
-use crate::session::{DebugSession, breakpoint, operations::OperationTarget};
+use crate::{session::{DebugSession, operations::{self, OperationTarget, OperationType}}, sys::linux::watchpoint::WatchAccess};
 use crate::sys::SystemError;
 use crate::utils::trim_file_path;
 
@@ -21,11 +21,12 @@ pub fn handle_event_by_index<F>(
     user_index: usize,
     func: F,
     action: &str,
+    type_: OperationType
 ) where
     F: FnOnce(
         &mut DebugSession,
         usize,
-    ) -> Result<breakpoint::BreakpointMutationResult, SystemError>,
+    ) -> Result<operations::OperationResult, SystemError>,
 {
     // Index 0 never exists
     // Index starts at 1
@@ -37,35 +38,35 @@ pub fn handle_event_by_index<F>(
     // Get the actual 0 based index once safe
     let vec_index = user_index - 1;
 
-    // Index out of bounds or already deleted
-    if vec_index >= session.current_index() {
+    if vec_index >= session.current_op_index(&type_) {
         display_error!("No such index");
         return;
     }
 
+
     match func(session, vec_index) {
-        Ok(breakpoint::BreakpointMutationResult::Updated) => {
+        Ok(operations::OperationResult::Updated) => {
             // Format action into being past tense
             println!(
                 "{} {}{} {}",
                 "Successfully".green(),
                 action.green(),
-                "d breakpoint".green(),
+                type_.green(),
                 user_index.cyan()
             );
         }
-        Ok(breakpoint::BreakpointMutationResult::AlreadyInState) => {
+        Ok(operations::OperationResult::AlreadyInState) => {
             println!(
                 "{} {} {} {}{}",
-                "Breakpoint".yellow(),
+                type_.yellow(),
                 user_index.cyan(),
                 "is already".yellow(),
                 action.yellow(),
                 "d".yellow()
             );
         }
-        Ok(breakpoint::BreakpointMutationResult::NotFound) => {
-            display_error!("Could not {} breakpoint", action);
+        Ok(operations::OperationResult::NotFound) => {
+            display_error!(format!("Could not {} {}", action, type_));
         }
         Err(e) => display_error!("{}", e),
 
@@ -73,6 +74,8 @@ pub fn handle_event_by_index<F>(
         _ => unreachable!(),
     }
 }
+
+// Breakpoints :
 
 pub fn handle_breakpoint_clearing(
     session: &mut DebugSession,
@@ -124,11 +127,11 @@ pub fn handle_breakpoint_setting(
         let result = session.create_breakpoint(line_number, target_file);
 
         match result {
-            Ok(breakpoint::BreakpointMutationResult::Created { count, target }) => {
+            Ok(operations::OperationResult::Created { count, target }) => {
                 handle_break_metadata(session, count, target, line_number);
                 return;
             }
-            Ok(breakpoint::BreakpointMutationResult::NotFound) => {
+            Ok(operations::OperationResult::NotFound) => {
                 display_error!("Could not find breakpoint")
             }
             Err(e) => display_error!("{}", e),
@@ -173,10 +176,10 @@ pub fn handle_breakpoint_setting(
 
     let result = session.create_breakpoint(line_number, chosen_file);
     match result {
-        Ok(breakpoint::BreakpointMutationResult::Created { count, target }) => {
+        Ok(operations::OperationResult::Created { count, target }) => {
             handle_break_metadata(session, count, target, line_number);
         }
-        Ok(breakpoint::BreakpointMutationResult::NotFound) => {
+        Ok(operations::OperationResult::NotFound) => {
             display_error!("Could not find breakpoint")
         }
         Err(e) => display_error!("{}", e),
@@ -203,12 +206,48 @@ fn handle_break_metadata(
 
     println!(
         "Breakpoint {} at {:#x}: file {}, {}",
-        session.current_index().cyan(),
+        session.current_op_index(&OperationType::Breakpoint).cyan(),
         first_bp_relative_address.bright_blue(),
         trimmed_path.green(),
         location_detail
     );
 }
+
+// Watchpoints :
+
+pub fn handle_watchpoint_setting(
+    session: &mut DebugSession,
+    var_name: &str,
+    access: &str,
+    line_number: u32
+) {
+    let watch_access = match WatchAccess::from_str(access) {
+        Some(wa) => wa,
+        None => {display_error!("Given watch access ({}) is incorrect.", access); return;}
+    };
+
+    let result = session.create_watchpoint(var_name, watch_access, line_number);
+
+    match result {
+        Ok(operations::OperationResult::Created { target, ..}) => {
+            println!(
+                "Watchpoint {} at {:#x}: variable {} at line {}",
+                session.current_op_index(&OperationType::Watchpoint).cyan(),
+                target.address.bright_blue(),
+                var_name.green(),
+                line_number
+            );
+        }
+        Ok(operations::OperationResult::NotFound) => {
+            display_error!("Variable not found, or intern error")
+        }
+        Err(e) => display_error!("{}", e),
+
+        _ => unreachable!()
+    }
+}
+
+
 
 #[inline]
 pub fn display_help() {
@@ -216,6 +255,7 @@ pub fn display_help() {
         r#"Debugger Commands:
     run                 - Begin the debugging process
     b / break           - Pause program execution at a specific point
+    w / watch           - Watch variable value changes
     clear               - Clear an existing breakpoint
     e / enable          - Enable an existing breakpoint
     dis / disable       - Disable an existing breakpoint
@@ -313,6 +353,63 @@ Options:
 }
 
 #[inline]
+pub fn display_watch_help() {
+    println!(
+        r#"Command: watch 
+Usage: watch <var>:<line> [<access>]
+Aliases: w, watchpoints
+
+Create a watchpoint on variable value changes.
+
+Options: 
+    <var>:<line>          Variable name and line number (e.g., foo:32)
+    [access]              Access type: c(hanged), w(rite), or rw (readwrite) (default: c)"#
+    );
+}
+
+#[inline]
+pub fn display_wd_help() {
+    println!(
+        r#"Command: delete-watchpoint 
+Usage: dw <idx> 
+
+Delete watchpoint at specific index. 
+[NOTE]: Index refers to the number assigned to the watchpoint starting from 1 and incrementing by 1 
+
+Options:
+    <idx>                 Delete watchpoint that matches the index "#
+    );
+}
+
+#[inline]
+pub fn display_disw_help() {
+    println!(
+        r#"Command: disable-watchpoint 
+Usage: disw <idx> 
+
+Disable watchpoint at specific index. 
+[NOTE]: Index refers to the number assigned to the watchpoint starting from 1 and incrementing by 1 
+
+Options:
+    <idx>                 Disable watchpoint that matches the index "#
+    );
+}
+
+#[inline]
+pub fn display_ew_help() {
+    println!(
+        r#"Command: enable-watchpoint 
+Usage: ew <idx> 
+
+Enable watchpoint at specific index. 
+[NOTE]: Index refers to the number assigned to the watchpoint starting from 1 and incrementing by 1 
+
+Options:
+    <idx>                 Enable watchpoint that matches the index "#
+    );
+}
+
+#[inline]
 pub fn display_continue_help() {
     println!(
         r#"Command: continue
@@ -396,13 +493,13 @@ Options:
 pub fn display_info_help() {
     println!(
         r#"Command: info 
-Usage: info <breakpoint> | <registers> | <locals> | <arguments>
+Usage: info <breakpoint/watchpoint> | <registers> | <locals> | <arguments>
 Aliases: i
 
 Get the information for the current running process. 
 
 Options: 
-    <breakpoint>        Print all enabled and disabled breakpoints
+    <breakpoint/watchpoint>        Print all enabled and disabled breakpoints or watchpoint
         Aliases: b, break, breakpoint, breakpoints
     <registers>         Print all register values
         Aliases: r, reg, regs, register, registers
@@ -517,7 +614,7 @@ macro_rules! display_success {
 }
 
 #[macro_export]
-macro_rules! get_breakpoint_address {
+macro_rules! get_address {
     ($arg: expr) => {{
         let breakpoint_addr = if *(&$arg[1..].starts_with("0x")) {
             match u64::from_str_radix(&$arg[3..], 16) {
@@ -580,7 +677,9 @@ macro_rules! handle_breakpoint_with_addr {
     };
 }
 
+
+
 pub use crate::{
-    display_error, display_success, get_breakpoint_address, handle_breakpoint_with_addr,
+    display_error, display_success, get_address, handle_breakpoint_with_addr,
     handle_cmd, parse_arg, parse_line_arg,
 };

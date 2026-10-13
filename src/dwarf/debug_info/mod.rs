@@ -219,7 +219,7 @@ pub enum DwarfType {
 }
 
 impl DwarfType {
-    fn get_byte_size(&self, type_index: &FxHashMap<usize, TypeCacheNode>) -> Option<u64> {
+    pub fn get_byte_size(&self, type_index: &FxHashMap<usize, TypeCacheNode>) -> Option<u64> {
         match self {
             DwarfType::Base { byte_size, .. } => Some(*byte_size),
 
@@ -1159,6 +1159,11 @@ impl ActiveParamsContext<'_> {
     /// Search for the first instance of the variable
     pub fn get_param_with_name(&self, name: &str) -> Option<&DebugVariable> {
         self.params.iter().find(|n| n.name == name).map(|&v| v)
+    }
+
+    /// Returns [`Some`] [`DebugVariable`] if a variable exists at the given line. If it doesn't, returns [`None`]
+    pub fn get_param_with_name_and_line(&self, name: &str, line: u32) -> Option<&DebugVariable> {
+        self.params.iter().find(|n| n.name == name && n.decl_line == line).map(|&v| v)
     }
 }
 
