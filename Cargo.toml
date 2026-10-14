@@ -3,6 +3,7 @@ name = "imo"
 edition = "2024"
 
 [dependencies]
+bit_field = "0.10.3"
 gimli = "0.33.0"
 memmap2 = "0.9.10"
 object = "0.39.1"
@@ -12,6 +13,7 @@ rustyline = { version = "18.0.1", default-features=false }
 thiserror = "2.0.20"
 
 [dev-dependencies]
+regex-lite = "0.1.7"
 strip-ansi-escapes = "0.2.1"
 uuid = { version = "1.26.1", features = [ "v4" ]}
 

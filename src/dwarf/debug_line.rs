@@ -178,9 +178,9 @@ fn update_session_cache(
                         .line_index
                         .entry(line)
                         .or_insert_with(Vec::new)
-                        .push(breakpoint::BreakpointTarget {
-                            file: path.into_boxed_path(),
-                            relative_address,
+                        .push(operations::OperationTarget {
+                            file: Box::new(path),
+                            address: relative_address,
                         });
 
                     registered_lines.insert(line);
