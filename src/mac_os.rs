@@ -152,7 +152,14 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
             if kern_return != kern_return::KERN_SUCCESS {
                 eprintln!("Error retrieving message");
             } else {
-                println!("This is the messag header {:?}", msg_header);
+                if msg_header.msgh_bits & mach2::message::MACH_MSGH_BITS_COMPLEX == 0 {
+                    if msg_header.msgh_id == 72 {
+                        println!("Child finished");
+                        return Ok(());
+                    } else {
+                        println!("Message is {:?}", msg_header);
+                    }
+                }
             }
         }
     }

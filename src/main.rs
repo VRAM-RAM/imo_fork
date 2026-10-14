@@ -50,6 +50,9 @@ fn main() {
         }
     }
 
-    eprintln!("Error: imo currently only supports Linux operating systems.");
-    exit(1);
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        eprintln!("Error: imo currently only supports Linux operating systems.");
+        exit(1);
+    }
 }
