@@ -78,14 +78,18 @@ pub fn read_bytes(port: ProcessHandle, ptr: usize, len: usize) -> Result<Vec<u8>
     let mut buffer = vec![0u8; len];
     let mut out_size = 0;
 
-    unsafe {
+    let mut kern_return = unsafe {
         vm::mach_vm_read_overwrite(
             port,
             ptr as u64,
             len as u64,
-            mem::transmute(&buffer),
-            mem::transmute(&out_size),
-        );
+            buffer.as_mut_ptr() as u64,
+            &mut out_size,
+        )
+    };
+
+    if kern_return != mach2::kern_return::KERN_SUCCESS {
+        println!("READ FAILED");
     }
 
     Ok(buffer)
