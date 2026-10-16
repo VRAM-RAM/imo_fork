@@ -32,20 +32,11 @@ impl BreakPoint {
         // Save the original lowest byte
         self.original_byte = (word & 0xFF) as u8;
 
-        // Overwrite the lowest byte with 0xCC (INT3)
-        let breakpoint_word = (word & !0xFF) | 0xCC;
-
-        // Write word back to child memory
-        // TODO: Find the beginning of the region and pass that address
-        // TODO: Find the size of the region and pass that as well
-        // SAFETY: The vm_protect works because the internal code rounds up the size and region but
-        // this might lead to undefined behavior
-
         unsafe {
-            let arr: [u8; 8] = breakpoint_word.to_le_bytes();
+            let arr: [u8; 1] = 0xCC_u8.to_le_bytes();
             let ptr = arr.as_ptr() as usize;
 
-            let kern_return = mach2::vm::mach_vm_protect(
+            let mut kern_return = mach2::vm::mach_vm_protect(
                 task_port,
                 self.addr,
                 1,
@@ -59,10 +50,23 @@ impl BreakPoint {
                 eprintln!("Could not protect address : {}", kern_return);
             }
 
-            let kern_return = mach2::vm::mach_vm_write(task_port, self.addr, ptr, 1);
+            kern_return = mach2::vm::mach_vm_write(task_port, self.addr, ptr, 1);
 
             if kern_return != mach2::kern_return::KERN_SUCCESS {
                 eprintln!("Could not write to address : {}", kern_return);
+            }
+
+            // Revert permissions back to default
+            kern_return = mach2::vm::mach_vm_protect(
+                task_port,
+                self.addr,
+                1,
+                0,
+                mach2::vm_prot::VM_PROT_EXECUTE | mach2::vm_prot::VM_PROT_READ,
+            );
+
+            if kern_return != mach2::kern_return::KERN_SUCCESS {
+                eprintln!("Could not protect address : {}", kern_return);
             }
         }
 

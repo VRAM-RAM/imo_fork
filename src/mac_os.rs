@@ -54,6 +54,10 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
 
     println!("Port: {} and Kern return: {}", child_task_port, kern_return);
 
+    unsafe {
+        println!("{}", libc::getpid());
+    }
+
     if kern_return == kern_return::KERN_SUCCESS {
         let mut session = session::DebugSession::new(child_task_port, binary_path)?;
         let mut exception_port: mach2::port::mach_port_name_t = 0;
@@ -86,7 +90,7 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
             // set specific exceptions to be tracked
             kern_return = mach2::task::task_set_exception_ports(
                 child_task_port,
-                mach2::exception_types::EXC_BREAKPOINT,
+                mach2::exception_types::EXC_MASK_BREAKPOINT,
                 exception_port,
                 mach2::exception_types::EXCEPTION_DEFAULT as i32,
                 THREAD_STATE64,
@@ -152,13 +156,26 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
             if kern_return != kern_return::KERN_SUCCESS {
                 eprintln!("Error retrieving message");
             } else {
-                if msg_header.msgh_bits & mach2::message::MACH_MSGH_BITS_COMPLEX == 0 {
-                    if msg_header.msgh_id == 72 {
+                println!("Message {:?}", msg_header);
+
+                let raw_msg_ptr: u64 = unsafe { std::mem::transmute(&msg_header) };
+
+                match msg_header.msgh_id {
+                    72 => {
                         println!("Child finished");
                         return Ok(());
-                    } else {
-                        println!("Message is {:?}", msg_header);
                     }
+                    2401 => unsafe {
+                        let exception: u32 =
+                            std::ptr::read_unaligned((raw_msg_ptr + 60) as *const u32);
+                        println!("{}", exception);
+                    },
+                    2405 => unsafe {
+                        let exception: u32 =
+                            std::ptr::read_unaligned((raw_msg_ptr + 64) as *const u32);
+                        println!("{}", exception);
+                    },
+                    _ => unimplemented!(),
                 }
             }
         }
