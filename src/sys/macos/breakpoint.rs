@@ -29,46 +29,9 @@ impl BreakPoint {
         // Read the current memory word
         let word = syscalls::peek_data(task_port, self.addr)?;
 
-        // Save the original lowest byte
         self.original_byte = (word & 0xFF) as u8;
-
-        unsafe {
-            let arr: [u8; 1] = 0xCC_u8.to_le_bytes();
-            let ptr = arr.as_ptr() as usize;
-
-            let mut kern_return = mach2::vm::mach_vm_protect(
-                task_port,
-                self.addr,
-                1,
-                0,
-                mach2::vm_prot::VM_PROT_READ
-                    | mach2::vm_prot::VM_PROT_COPY
-                    | mach2::vm_prot::VM_PROT_WRITE,
-            );
-
-            if kern_return != mach2::kern_return::KERN_SUCCESS {
-                eprintln!("Could not protect address : {}", kern_return);
-            }
-
-            kern_return = mach2::vm::mach_vm_write(task_port, self.addr, ptr, 1);
-
-            if kern_return != mach2::kern_return::KERN_SUCCESS {
-                eprintln!("Could not write to address : {}", kern_return);
-            }
-
-            // Revert permissions back to default
-            kern_return = mach2::vm::mach_vm_protect(
-                task_port,
-                self.addr,
-                1,
-                0,
-                mach2::vm_prot::VM_PROT_EXECUTE | mach2::vm_prot::VM_PROT_READ,
-            );
-
-            if kern_return != mach2::kern_return::KERN_SUCCESS {
-                eprintln!("Could not protect address : {}", kern_return);
-            }
-        }
+        let arr: [u8; 1] = 0xCC_u8.to_le_bytes();
+        syscalls::write_data(task_port, self.addr, &arr)?;
 
         self.is_enabled = true;
 
@@ -81,12 +44,8 @@ impl BreakPoint {
             return Ok(());
         }
 
-        let word = syscalls::peek_data(task_port, self.addr)?;
-        let restored_word = (word & !0xFF) | (self.original_byte as i64);
-
-        unsafe {
-            mach2::vm::mach_vm_write(task_port, self.addr, restored_word as usize, 0);
-        }
+        let restored_word: [u8; 1] = self.original_byte.to_le_bytes();
+        syscalls::write_data(task_port, self.addr, &restored_word);
         self.is_enabled = false;
 
         Ok(())

@@ -124,6 +124,45 @@ pub fn peek_data(port: ProcessHandle, address: u64) -> Result<i64, MacOSError> {
     Ok(data)
 }
 
+pub fn write_data(port: ProcessHandle, address: u64, data: &[u8]) -> Result<(), MacOSError> {
+    unsafe {
+        let mut kern_return = mach2::vm::mach_vm_protect(
+            port,
+            address,
+            1,
+            0,
+            mach2::vm_prot::VM_PROT_READ
+                | mach2::vm_prot::VM_PROT_COPY
+                | mach2::vm_prot::VM_PROT_WRITE,
+        );
+
+        if kern_return != mach2::kern_return::KERN_SUCCESS {
+            eprintln!("Could not protect address : {}", kern_return);
+        }
+
+        kern_return = mach2::vm::mach_vm_write(port, address, data.as_ptr() as usize, 1);
+
+        if kern_return != mach2::kern_return::KERN_SUCCESS {
+            eprintln!("Could not write to address : {}", kern_return);
+        }
+
+        // Revert permissions back to default
+        kern_return = mach2::vm::mach_vm_protect(
+            port,
+            address,
+            1,
+            0,
+            mach2::vm_prot::VM_PROT_EXECUTE | mach2::vm_prot::VM_PROT_READ,
+        );
+
+        if kern_return != mach2::kern_return::KERN_SUCCESS {
+            eprintln!("Could not protect address : {}", kern_return);
+        }
+    }
+
+    Ok(())
+}
+
 pub fn get_regs(port: ProcessHandle) -> Result<PlatformRegStruct, MacOSError> {
     let mut raw_thread_list: mach2::mach_types::thread_act_port_array_t = std::ptr::null_mut();
     let mut count = 0;
