@@ -1,7 +1,7 @@
 use crate::cli::handle_user_debugger_menu;
 use crate::error::DebuggerError;
 use crate::session;
-use crate::sys::macos::error::MacOSError;
+use crate::sys::{macos::error::MacOSError, os::syscalls};
 
 use mach2::{kern_return, mach_types, traps};
 use rustyline::DefaultEditor;
@@ -10,6 +10,28 @@ use rustyline::DefaultEditor;
 use mach2::thread_status::x86_THREAD_STATE64 as THREAD_STATE64;
 #[cfg(target_arch = "aarch64")]
 use mach2::thread_status::ARM_THREAD_STATE64 as THREAD_STATE64;
+
+/// Struct matching the message format of the message being received
+/// from EXCEPTION_STATE_IDENTITY
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct ExceptionStateIdentityMessage {
+    pub header: mach2::message::mach_msg_header_t,
+    pub body: mach2::message::mach_msg_body_t,
+    pub padding: u32, // Match the alignment of the message
+
+    pub thread: mach2::message::mach_msg_port_descriptor_t,
+    pub task: mach2::message::mach_msg_port_descriptor_t,
+
+    pub exception: u32,
+    pub code_count: u32,
+    pub code: [i32; 2],
+
+    pub flavor: i32,
+    pub state_count: u32,
+    pub thread_state: crate::sys::os::PlatformRegStruct,
+}
 
 pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerError> {
     let mut pid: i32 = 0;
@@ -92,7 +114,7 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                 child_task_port,
                 mach2::exception_types::EXC_MASK_BREAKPOINT,
                 exception_port,
-                mach2::exception_types::EXCEPTION_DEFAULT as i32,
+                mach2::exception_types::EXCEPTION_STATE_IDENTITY as i32,
                 THREAD_STATE64,
             );
 
@@ -156,27 +178,6 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
             if kern_return != kern_return::KERN_SUCCESS {
                 eprintln!("Error retrieving message");
             } else {
-                println!("Message {:?}", msg_header);
-
-                let raw_msg_ptr: u64 = unsafe { std::mem::transmute(&msg_header) };
-
-                match msg_header.msgh_id {
-                    72 => {
-                        println!("Child finished");
-                        return Ok(());
-                    }
-                    2401 => unsafe {
-                        let exception: u32 =
-                            std::ptr::read_unaligned((raw_msg_ptr + 60) as *const u32);
-                        println!("{}", exception);
-                    },
-                    2405 => unsafe {
-                        let exception: u32 =
-                            std::ptr::read_unaligned((raw_msg_ptr + 64) as *const u32);
-                        println!("{}", exception);
-                    },
-                    _ => unimplemented!(),
-                }
             }
         }
     }
