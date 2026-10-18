@@ -593,7 +593,16 @@ impl DebugSession {
 
     /// Get the relative address from absolute address
     pub fn get_relative_address(&self, absolute_address: u64) -> u64 {
-        absolute_address - self.base_address
+        #[cfg(target_os = "macos")] 
+        {
+            let relative = absolute_address - self.base_address;
+            relative + 0x1_0000_0000
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            absolute_address - self.base_address
+        }        
     }
 
     /// Find current scope with internal pc

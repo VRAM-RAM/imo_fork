@@ -1,7 +1,11 @@
 use crate::cli::handle_user_debugger_menu;
 use crate::error::DebuggerError;
-use crate::session;
-use crate::sys::{macos::error::MacOSError, os::syscalls};
+use crate::session::{self, execution::CurrentStopCmd};
+use crate::sys::{
+    macos::error::MacOSError,
+    os::{syscalls, PlatformRegStruct},
+    registers::RegisterViewer,
+};
 
 use mach2::{kern_return, mach_types, traps};
 use rustyline::DefaultEditor;
@@ -10,28 +14,6 @@ use rustyline::DefaultEditor;
 use mach2::thread_status::x86_THREAD_STATE64 as THREAD_STATE64;
 #[cfg(target_arch = "aarch64")]
 use mach2::thread_status::ARM_THREAD_STATE64 as THREAD_STATE64;
-
-/// Struct matching the message format of the message being received
-/// from EXCEPTION_STATE_IDENTITY
-
-#[derive(Debug)]
-#[repr(C)]
-pub struct ExceptionStateIdentityMessage {
-    pub header: mach2::message::mach_msg_header_t,
-    pub body: mach2::message::mach_msg_body_t,
-    pub padding: u32, // Match the alignment of the message
-
-    pub thread: mach2::message::mach_msg_port_descriptor_t,
-    pub task: mach2::message::mach_msg_port_descriptor_t,
-
-    pub exception: u32,
-    pub code_count: u32,
-    pub code: [i32; 2],
-
-    pub flavor: i32,
-    pub state_count: u32,
-    pub thread_state: crate::sys::os::PlatformRegStruct,
-}
 
 pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerError> {
     let mut pid: i32 = 0;
@@ -74,12 +56,6 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
     let mut kern_return =
         unsafe { traps::task_for_pid(traps::mach_task_self(), pid, &mut child_task_port) };
 
-    println!("Port: {} and Kern return: {}", child_task_port, kern_return);
-
-    unsafe {
-        println!("{}", libc::getpid());
-    }
-
     if kern_return == kern_return::KERN_SUCCESS {
         let mut session = session::DebugSession::new(child_task_port, binary_path)?;
         let mut exception_port: mach2::port::mach_port_name_t = 0;
@@ -114,7 +90,7 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                 child_task_port,
                 mach2::exception_types::EXC_MASK_BREAKPOINT,
                 exception_port,
-                mach2::exception_types::EXCEPTION_STATE_IDENTITY as i32,
+                mach2::exception_types::EXCEPTION_DEFAULT as i32,
                 THREAD_STATE64,
             );
 
@@ -155,20 +131,28 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
 
         handle_user_debugger_menu(&mut session, rl)?;
 
+        let mut buffer: [u8; 256] = [0; 256];
+
         let mut msg_header = mach2::message::mach_msg_header_t::default();
         let option = mach2::message::MACH_RCV_MSG;
-        let size = 0;
-        let recieve = unsafe { traps::mach_task_self() };
+        let send_size = 0;
+        let recieve_size = 256;
         let timeout = mach2::message::MACH_MSG_TIMEOUT_NONE;
         let notify = mach2::port::MACH_PORT_NULL;
 
         loop {
+            if session.current_cmd.is_completed() {
+                let source_display = session.get_current_source_file();
+                println!("{}", source_display);
+                handle_user_debugger_menu(&mut session, rl)?;
+            }
+
             kern_return = unsafe {
                 mach2::message::mach_msg(
-                    &mut msg_header,
+                    buffer.as_mut_ptr() as *mut mach2::message::mach_msg_header_t,
                     option,
-                    size,
-                    recieve,
+                    send_size,
+                    recieve_size,
                     exception_port,
                     timeout,
                     notify,
@@ -178,6 +162,77 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
             if kern_return != kern_return::KERN_SUCCESS {
                 eprintln!("Error retrieving message");
             } else {
+                let base_ptr = buffer.as_ptr();
+                let header = unsafe { *(base_ptr as *const mach2::message::mach_msg_header_t) };
+
+                match header.msgh_id {
+                    72 => {
+                        println!("Child finished");
+                        return Ok(());
+                    }
+                    2401 | 2405 => {
+                        let exception_offset = if header.msgh_id == 2401 { 60 } else { 64 };
+                        let exception =
+                            unsafe { *(base_ptr.wrapping_add(exception_offset) as *const u32) };
+
+                        match exception {
+                            // Software Breakpoint
+                            6 => {
+                                let crashed_thread =
+                                    unsafe { *(base_ptr.wrapping_add(28) as *const u32) };
+
+                                let mut regs = PlatformRegStruct::new();
+                                let mut regs_count = PlatformRegStruct::count();
+
+                                kern_return = unsafe {
+                                    mach2::thread_act::thread_get_state(
+                                        crashed_thread,
+                                        THREAD_STATE64,
+                                        std::mem::transmute(&regs),
+                                        &mut regs_count,
+                                    )
+                                };
+
+                                match session.current_cmd {
+                                    CurrentStopCmd::Running | CurrentStopCmd::Continuing => {
+                                        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                                        {
+                                            let breakpoint_addr = regs.__rip - 1;
+                                            if let Some(bp) =
+                                                session.active_breakpoints.get_mut(&breakpoint_addr)
+                                            {
+                                                kern_return = unsafe {
+                                                    mach2::thread_act::thread_set_state(
+                                                        crashed_thread,
+                                                        THREAD_STATE64,
+                                                        std::mem::transmute(&regs),
+                                                        regs_count,
+                                                    )
+                                                };
+
+                                                if kern_return != kern_return::KERN_SUCCESS {
+                                                    println!(
+                                                        "Failed to update regs: {}",
+                                                        kern_return
+                                                    );
+                                                }
+
+                                                session.registers = Some(RegisterViewer { regs });
+                                                bp.breakpoint.disable(child_task_port);
+                                                session.current_cmd = CurrentStopCmd::Completed;
+                                            } else {
+                                                handle_user_debugger_menu(&mut session, rl)?;
+                                            }
+                                        }
+                                    }
+                                    _ => unimplemented!(),
+                                }
+                            }
+                            _ => todo!(),
+                        }
+                    }
+                    _ => todo!(),
+                }
             }
         }
     }

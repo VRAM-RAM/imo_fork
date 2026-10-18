@@ -44,7 +44,21 @@ impl RegisterViewer {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+// SAFETY: Add a new type for sillon mac; only works for intel mac
+#[cfg(target_os = "macos")]
+impl RegisterViewer {
+    pub fn stack_pointer(&self) -> u64 {
+        self.regs.__rsp
+    }
+    pub fn instruction_pointer(&self) -> u64 {
+        self.regs.__rip
+    }
+    pub fn base_pointer(&self) -> u64 {
+        self.regs.__rbp
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 impl RegisterViewer {
     pub fn stack_pointer(&self) -> u64 {
         0
