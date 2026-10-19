@@ -67,6 +67,9 @@ pub struct DebugSession {
     // Different for each os
     pub active_breakpoints: FxHashMap<u64, ManagedBreakpoint>,
     pub process_handle: os::ProcessHandle,
+
+    #[cfg(target_os = "macos")]
+    pub crashed_thread: u32
 }
 
 impl DebugSession {
@@ -87,6 +90,9 @@ impl DebugSession {
             file_indices: FileIndices::default(),
             registers: None,
             process_handle,
+
+            #[cfg(target_os = "macos")]
+            crashed_thread: 0
         }
     }
 
@@ -412,9 +418,22 @@ impl DebugSession {
         Ok(pc)
     }
 
+    pub fn run_session(&self) -> Result<(), SystemError> {
+        syscalls::run_session(self.process_handle)
+    }
     /// Continue session from last interrupt
     pub fn continue_session(&self) -> Result<(), SystemError> {
-        syscalls::continue_session(self.process_handle)
+        #[cfg(target_os = "linux")]
+        {
+            syscalls::continue_session(self.process_handle)?;
+            Ok(())
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            syscalls::continue_session(self.process_handle, self.crashed_thread)?;
+            Ok(())
+        }
     }
 
     /// Send a trap signal to the child process

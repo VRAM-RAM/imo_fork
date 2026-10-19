@@ -99,10 +99,24 @@ pub fn step(_port: ProcessHandle) -> Result<(), MacOSError> {
     unimplemented!("imo debugger only runs on Linux")
 }
 
-pub fn continue_session(port: ProcessHandle) -> Result<(), MacOSError> {
+pub fn run_session(port: ProcessHandle) -> Result<(), MacOSError> {
     unsafe {
         let kern_return = mach2::task::task_resume(port);
         println!("Task ran with: {}", kern_return);
+    }
+    Ok(())
+}
+
+pub fn continue_session(port: ProcessHandle, crashed_thread: u32) -> Result<(), MacOSError> {
+    unsafe {
+        let mut kern_return = mach2::task::task_resume(port);
+
+        if kern_return != mach2::kern_return::KERN_SUCCESS {
+            todo!()
+        }
+
+        // Send message to the thread to hopefully have it resume normally
+        todo!()
     }
     Ok(())
 }

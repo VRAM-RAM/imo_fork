@@ -73,6 +73,11 @@ pub fn update_process_addresses(
     Ok(())
 }
 
+pub fn run_session(pid: ProcessHanlde) -> Result<(), LinuxError> {
+    ptrace::cont(pid, None)?;
+    Ok(())
+}
+
 /// Continue debug session
 pub fn continue_session(pid: ProcessHandle) -> Result<(), LinuxError> {
     ptrace::cont(pid, None)?;

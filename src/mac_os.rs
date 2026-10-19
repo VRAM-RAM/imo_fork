@@ -178,6 +178,8 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                         match exception {
                             // Software Breakpoint
                             6 => {
+                                kern_return = unsafe { mach2::task::task_suspend(child_task_port) };
+
                                 let crashed_thread =
                                     unsafe { *(base_ptr.wrapping_add(28) as *const u32) };
 
@@ -201,6 +203,8 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                             if let Some(bp) =
                                                 session.active_breakpoints.get_mut(&breakpoint_addr)
                                             {
+                                                regs.__rip = breakpoint_addr;
+
                                                 kern_return = unsafe {
                                                     mach2::thread_act::thread_set_state(
                                                         crashed_thread,

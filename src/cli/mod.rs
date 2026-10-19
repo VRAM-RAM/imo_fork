@@ -34,7 +34,7 @@ pub fn handle_user_debugger_menu(session: &mut DebugSession, rl: &mut DefaultEdi
                     "run" => {
                         if session.is_idle() {
                             session.toggle_running();
-                            if let Err(err) = session.continue_session() {
+                            if let Err(err) = session.run_session() {
                                 eprintln!("{err}")
                             }
                             return Ok(());
