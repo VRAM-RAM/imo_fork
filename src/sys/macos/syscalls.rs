@@ -1,6 +1,6 @@
 use crate::dwarf::error::CacheSetupError;
 use crate::sys::macos::error::MacOSError;
-use crate::sys::macos::{PlatformRegStruct, ProcessHandle};
+use crate::sys::macos::{MessageReply, PlatformRegStruct, ProcessHandle};
 
 use std::mem;
 
@@ -107,16 +107,13 @@ pub fn run_session(port: ProcessHandle) -> Result<(), MacOSError> {
     Ok(())
 }
 
-pub fn continue_session(port: ProcessHandle, crashed_thread: u32) -> Result<(), MacOSError> {
+pub fn continue_session(port: ProcessHandle, mut message: MessageReply) -> Result<(), MacOSError> {
     unsafe {
-        let mut kern_return = mach2::task::task_resume(port);
+        let kern_return = mach2::task::task_resume(port);
 
         if kern_return != mach2::kern_return::KERN_SUCCESS {
             todo!()
         }
-
-        // Send message to the thread to hopefully have it resume normally
-        todo!()
     }
     Ok(())
 }

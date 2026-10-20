@@ -3,7 +3,7 @@ use crate::error::DebuggerError;
 use crate::session::{self, execution::CurrentStopCmd};
 use crate::sys::{
     macos::error::MacOSError,
-    os::{syscalls, PlatformRegStruct},
+    os::{syscalls, MessageReply, PlatformRegStruct},
     registers::RegisterViewer,
 };
 
@@ -198,35 +198,69 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                 match session.current_cmd {
                                     CurrentStopCmd::Running | CurrentStopCmd::Continuing => {
                                         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                                        let breakpoint_addr = regs.__rip - 1;
+
+                                        #[cfg(target_arch = "aarch64")]
+                                        let breakpoint_addr = regs.__pc;
+
+                                        if let Some(bp) =
+                                            session.active_breakpoints.get_mut(&breakpoint_addr)
                                         {
-                                            let breakpoint_addr = regs.__rip - 1;
-                                            if let Some(bp) =
-                                                session.active_breakpoints.get_mut(&breakpoint_addr)
-                                            {
-                                                regs.__rip = breakpoint_addr;
+                                            regs.__rip = breakpoint_addr;
 
-                                                kern_return = unsafe {
-                                                    mach2::thread_act::thread_set_state(
-                                                        crashed_thread,
-                                                        THREAD_STATE64,
-                                                        std::mem::transmute(&regs),
-                                                        regs_count,
-                                                    )
-                                                };
+                                            kern_return = unsafe {
+                                                mach2::thread_act::thread_set_state(
+                                                    crashed_thread,
+                                                    THREAD_STATE64,
+                                                    std::mem::transmute(&regs),
+                                                    regs_count,
+                                                )
+                                            };
 
-                                                if kern_return != kern_return::KERN_SUCCESS {
-                                                    println!(
-                                                        "Failed to update regs: {}",
-                                                        kern_return
-                                                    );
-                                                }
-
-                                                session.registers = Some(RegisterViewer { regs });
-                                                bp.breakpoint.disable(child_task_port);
-                                                session.current_cmd = CurrentStopCmd::Completed;
-                                            } else {
-                                                handle_user_debugger_menu(&mut session, rl)?;
+                                            if kern_return != kern_return::KERN_SUCCESS {
+                                                println!("Failed to update regs: {}", kern_return);
                                             }
+
+                                            session.registers = Some(RegisterViewer { regs });
+                                            bp.breakpoint.disable(child_task_port);
+                                            session.current_cmd = CurrentStopCmd::Completed;
+
+                                            let mut message = MessageReply {
+                                                header: mach2::message::mach_msg_header_t {
+                                                    msgh_bits:
+                                                        mach2::message::MACH_MSG_TYPE_MOVE_SEND_ONCE,
+                                                    msgh_size: std::mem::size_of::<MessageReply>()
+                                                        as u32,
+                                                    msgh_remote_port: header.msgh_remote_port,
+                                                    msgh_local_port: mach2::port::MACH_PORT_NULL,
+                                                    msgh_voucher_port: mach2::port::MACH_PORT_NULL,
+                                                    msgh_id: header.msgh_id + 100,
+                                                },
+                                                NDR: unsafe { mach2::ndr::NDR_record },
+                                                kern_return: kern_return::KERN_SUCCESS,
+                                            };
+
+                                            kern_return = unsafe {
+                                                mach2::message::mach_msg(
+                                                    &mut message as *mut MessageReply
+                                                        as *mut mach2::message::mach_msg_header_t,
+                                                    mach2::message::MACH_SEND_MSG,
+                                                    std::mem::size_of::<MessageReply>() as u32,
+                                                    0,
+                                                    mach2::port::MACH_PORT_NULL,
+                                                    mach2::message::MACH_MSG_TIMEOUT_NONE,
+                                                    mach2::port::MACH_PORT_NULL,
+                                                )
+                                            };
+
+                                            if kern_return != mach2::kern_return::KERN_SUCCESS {
+                                                println!(
+                                                    "Could not revive thread: {}",
+                                                    kern_return
+                                                );
+                                            }
+                                        } else {
+                                            handle_user_debugger_menu(&mut session, rl)?;
                                         }
                                     }
                                     _ => unimplemented!(),

@@ -6,7 +6,7 @@ use std::{
 use owo_colors::OwoColorize;
 use rustc_hash::FxHashSet;
 
-use crate::session::{DebugSession, breakpoint};
+use crate::session::{breakpoint, DebugSession};
 use crate::sys::SystemError;
 use crate::utils::trim_file_path;
 
