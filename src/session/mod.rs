@@ -414,7 +414,7 @@ impl DebugSession {
 
     /// Continue session from last interrupt
     pub fn continue_session(&self) -> Result<(), SystemError> {
-        syscalls::run_session(self.process_handle)
+        syscalls::continue_session(self.process_handle)
     }
 
     /// Send a trap signal to the child process

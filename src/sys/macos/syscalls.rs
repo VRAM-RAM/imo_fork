@@ -99,15 +99,7 @@ pub fn step(_port: ProcessHandle) -> Result<(), MacOSError> {
     unimplemented!("imo debugger only runs on Linux")
 }
 
-pub fn run_session(port: ProcessHandle) -> Result<(), MacOSError> {
-    unsafe {
-        let kern_return = mach2::task::task_resume(port);
-        println!("Task ran with: {}", kern_return);
-    }
-    Ok(())
-}
-
-pub fn continue_session(port: ProcessHandle, mut message: MessageReply) -> Result<(), MacOSError> {
+pub fn continue_session(port: ProcessHandle) -> Result<(), MacOSError> {
     unsafe {
         let kern_return = mach2::task::task_resume(port);
 
