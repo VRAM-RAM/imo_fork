@@ -63,7 +63,7 @@ impl RegisterViewer {
 }
 
 // SAFETY: Add a new type for sillon mac; only works for intel mac
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
 impl RegisterViewer {
     pub fn stack_pointer(&self) -> u64 {
         self.regs.__rsp
@@ -73,6 +73,19 @@ impl RegisterViewer {
     }
     pub fn base_pointer(&self) -> u64 {
         self.regs.__rbp
+    }
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+impl RegisterViewer {
+    pub fn stack_pointer(&self) -> u64 {
+        self.regs.__sp
+    }
+    pub fn instruction_pointer(&self) -> u64 {
+        self.regs.__pc
+    }
+    pub fn base_pointer(&self) -> u64 {
+        self.regs.__fp
     }
 }
 

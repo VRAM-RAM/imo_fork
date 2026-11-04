@@ -1,10 +1,6 @@
 use crate::sys::macos::error::MacOSError;
 use crate::sys::os::syscalls;
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use mach2::structs::x86_thread_state64_t;
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 /// Stores and manages the insertion and removal of the 0xCC (INT3) keyword for the instruction
 #[derive(Debug)]
 pub struct BreakPoint {
@@ -13,7 +9,6 @@ pub struct BreakPoint {
     is_enabled: bool,
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 impl BreakPoint {
     /// Creates a new instance of breakpoint from address
     pub fn new(addr: u64) -> Self {
@@ -30,7 +25,12 @@ impl BreakPoint {
         let word = syscalls::peek_data(task_port, self.addr)?;
 
         self.original_byte = (word & 0xFF) as u8;
+        #[cfg(target_arch = "x86_64")]
         let arr: [u8; 1] = 0xCC_u8.to_le_bytes();
+
+        #[cfg(target_arch = "aarch64")]
+        let arr: [u8; 1] = 0x3C_u8.to_le_bytes();
+
         syscalls::write_data(task_port, self.addr, &arr)?;
 
         self.is_enabled = true;

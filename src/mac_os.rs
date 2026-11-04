@@ -10,6 +10,7 @@ use crate::sys::{
 use mach2::{kern_return, mach_types, traps};
 use rustyline::DefaultEditor;
 
+// Get the relative address of the instruction pointer in the text segment
 macro_rules! get_pc {
     ($regs: expr, $base_address: expr) => {{
         #[cfg(target_arch = "x86_64")]
@@ -19,6 +20,19 @@ macro_rules! get_pc {
         let offset = $regs.__pc - $base_address;
 
         0x1_0000_0000 + offset
+    }};
+}
+
+// Get stack pointer from the register based on the OS register structure
+macro_rules! get_sp {
+    ($regs: expr) => {{
+        #[cfg(target_arch = "x86_64")]
+        let sp = $regs.__rsp;
+
+        #[cfg(target_arch = "aarch64")]
+        let sp = $regs.__sp;
+
+        sp
     }};
 }
 
@@ -253,20 +267,23 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                 }
 
                                 // Ensure trap flag is cleared after each iteration
-                                if regs.__rflags & TRAP_FLAG > 0 {
-                                    regs.__rflags &= !TRAP_FLAG;
-                                    // Update register with the cleared Trap Flag
-                                    kern_return = unsafe {
-                                        mach2::thread_act::thread_set_state(
-                                            crashed_thread,
-                                            THREAD_STATE64,
-                                            std::mem::transmute(&regs),
-                                            regs_count,
-                                        )
-                                    };
+                                #[cfg(target_arch = "x86_64")]
+                                {
+                                    if regs.__rflags & TRAP_FLAG > 0 {
+                                        regs.__rflags &= !TRAP_FLAG;
+                                        // Update register with the cleared Trap Flag
+                                        kern_return = unsafe {
+                                            mach2::thread_act::thread_set_state(
+                                                crashed_thread,
+                                                THREAD_STATE64,
+                                                std::mem::transmute(&regs),
+                                                regs_count,
+                                            )
+                                        };
 
-                                    if kern_return != mach2::kern_return::KERN_SUCCESS {
-                                        println!("Failed to clean regs: {}", kern_return);
+                                        if kern_return != mach2::kern_return::KERN_SUCCESS {
+                                            println!("Failed to clean regs: {}", kern_return);
+                                        }
                                     }
                                 }
 
@@ -303,7 +320,7 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                         start_line,
                                         started_from_inline,
                                     } => {
-                                        let current_rsp = regs.__rsp;
+                                        let current_rsp = get_sp!(regs);
 
                                         // If current rsp is greater than the start rsp then we stepped out of a function and should stop there
                                         if current_rsp > start_stack_pointer {
@@ -381,13 +398,21 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                         started_from_inline,
                                     } => {
                                         // Simply clear breakpoint and send data back to finish stepover to handle completion
+                                        #[cfg(target_arch = "x86_64")]
                                         let breakpoint_addr = regs.__rip - 1;
+
+                                        #[cfg(target_arch = "aarch64")]
+                                        let breakpoint_addr = regs.__pc;
 
                                         let relative_address =
                                             session.get_relative_address(breakpoint_addr);
                                         session.clear_specific_breakpoint(relative_address)?;
 
-                                        regs.__rip = breakpoint_addr;
+                                        #[cfg(target_arch = "x86_64")]
+                                        {
+                                            regs.__rip = breakpoint_addr;
+                                        }
+
                                         kern_return = unsafe {
                                             mach2::thread_act::thread_set_state(
                                                 crashed_thread,
@@ -424,7 +449,7 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                     } => {
                                         // If we stepped out of original function or back to
                                         // original function then complete else go back to stepping over
-                                        if original_stack_pointer >= regs.__rsp {
+                                        if original_stack_pointer >= get_sp!(regs) {
                                             session.current_cmd = CurrentStopCmd::StepOver {
                                                 start_stack_pointer: original_stack_pointer,
                                                 start_file: original_file,
@@ -440,7 +465,7 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                         start_stack_pointer,
                                         started_from_inline,
                                     } => {
-                                        let current_rsp = regs.__rsp;
+                                        let current_rsp = get_sp!(regs);
 
                                         if current_rsp > start_stack_pointer {
                                             session.current_cmd = CurrentStopCmd::Completed;
@@ -481,13 +506,21 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                     } => {
                                         // A handshake from the step over
                                         // Simply clear breakpoint and send data back to finish stepover to handle completion
+                                        #[cfg(target_arch = "x86_64")]
                                         let breakpoint_addr = regs.__rip - 1;
+
+                                        #[cfg(target_arch = "aarch64")]
+                                        let breakpoint_addr = regs.__pc;
 
                                         let relative_address =
                                             session.get_relative_address(breakpoint_addr);
                                         session.clear_specific_breakpoint(relative_address)?;
 
-                                        regs.__rip = breakpoint_addr;
+                                        #[cfg(target_arch = "x86_64")]
+                                        {
+                                            regs.__rip = breakpoint_addr;
+                                        }
+
                                         kern_return = unsafe {
                                             mach2::thread_act::thread_set_state(
                                                 crashed_thread,
@@ -521,7 +554,7 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                     } => {
                                         // If we stepped out of original function or back to
                                         // original function then complete else go back to stepping over
-                                        if start_stack_pointer >= regs.__rsp {
+                                        if start_stack_pointer >= get_sp!(regs) {
                                             session.current_cmd = CurrentStopCmd::Finish {
                                                 start_stack_pointer,
                                                 started_from_inline,
@@ -550,7 +583,13 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                         if let Some(bp) =
                                             session.active_breakpoints.get_mut(&breakpoint_addr)
                                         {
-                                            regs.__rip = breakpoint_addr;
+                                            #[cfg(any(
+                                                target_arch = "x86",
+                                                target_arch = "x86_64"
+                                            ))]
+                                            {
+                                                regs.__rip = breakpoint_addr;
+                                            }
 
                                             kern_return = unsafe {
                                                 mach2::thread_act::thread_set_state(

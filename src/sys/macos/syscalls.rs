@@ -81,7 +81,11 @@ pub fn read_bytes(port: ProcessHandle, ptr: usize, len: usize) -> Result<Vec<u8>
 
 pub fn step(port: ProcessHandle, thread: u32) -> Result<(), MacOSError> {
     let mut regs = get_regs(thread)?;
-    regs.__rflags |= TRAP_FLAG;
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        regs.__rflags |= TRAP_FLAG;
+    }
 
     let mut kern_return = unsafe {
         mach2::thread_act::thread_set_state(
