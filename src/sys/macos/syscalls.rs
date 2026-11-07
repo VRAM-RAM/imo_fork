@@ -87,6 +87,11 @@ pub fn step(port: ProcessHandle, thread: u32) -> Result<(), MacOSError> {
         regs.__rflags |= TRAP_FLAG;
     }
 
+    #[cfg(target_arch = "x86_64")]
+    {
+        regs.__cpsr |= TRAP_FLAG;
+    }
+
     let mut kern_return = unsafe {
         mach2::thread_act::thread_set_state(
             thread,

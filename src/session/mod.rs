@@ -423,8 +423,37 @@ impl DebugSession {
                 }
             }
 
-        #[cfg(not(target_arch = "x86_64"))] 
-        todo!()
+        #[cfg(target_arch = "aarch64")]
+        {
+            use macho_unwind_info::opcodes::OpcodeArm64;
+
+            match &self.unwind_info {
+                Some(info) => {
+                   if let Ok(Some(func)) = info.lookup(current_pc as u32) {
+                       match OpcodeArm64::parse(func.opcode) {
+                            OpcodeArm64::FrameBased { .. } => {
+                                let read_address = |process_handle: u32, addr: u64| {
+                                    syscalls::peek_data(process_handle, addr).map(|val| val as u64).unwrap()
+                                };
+
+                                // TODO: Handle the case where it might be in function prologue
+                                let cfa = regs.base_pointer + 16;  
+                                let return_address = regs.base_pointer + 8;
+                                let base_pointer = regs.base_pointer;
+
+                                regs.stack_pointer = cfa; 
+                                regs.instruction_pointer = read_address(self.process_handle, return_address);
+                                regs.base_pointer = read_address(self.process_handle, base_pointer);
+
+                            }
+                            OpcodeArm64::Dwarf { .. } => {}
+                            _ => todo!()
+                       }
+                   }
+                } 
+                None => unreachable!()
+            }                
+        }
 
         }
 

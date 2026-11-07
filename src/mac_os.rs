@@ -2,10 +2,16 @@ use crate::cli::handle_user_debugger_menu;
 use crate::error::DebuggerError;
 use crate::session::{self, execution::CurrentStopCmd};
 use crate::sys::{
-    macos::{error::MacOSError, THREAD_STATE64, TRAP_FLAG},
+    macos::{error::MacOSError, THREAD_STATE64},
     os::{syscalls, MessageReply, PlatformRegStruct},
     registers::RegisterViewer,
 };
+
+#[cfg(target_arch = "x86_64")]
+use crate::sys::macos::TRAP_FLAG;
+
+#[cfg(target_arch = "aarch64")]
+use crate::sys::macos::SS_FLAG;
 
 use mach2::{kern_return, mach_types, traps};
 use rustyline::DefaultEditor;
@@ -266,6 +272,7 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                     println!("Could not revive thread: {}", kern_return);
                                 }
 
+                                // TODO: Combine these similar functionalities
                                 // Ensure trap flag is cleared after each iteration
                                 #[cfg(target_arch = "x86_64")]
                                 {
@@ -284,6 +291,26 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                         if kern_return != mach2::kern_return::KERN_SUCCESS {
                                             println!("Failed to clean regs: {}", kern_return);
                                         }
+                                    }
+                                }
+
+                                #[cfg(target_arch = "aarch64")]
+                                {
+                                    if regs.__cpsr & SS_FLAG > 0 {
+                                        regs.__cpsr &= !SS_FLAG;
+                                    }
+                                    // Update register with the cleared Trap Flag
+                                    kern_return = unsafe {
+                                        mach2::thread_act::thread_set_state(
+                                            crashed_thread,
+                                            THREAD_STATE64,
+                                            std::mem::transmute(&regs),
+                                            regs_count,
+                                        )
+                                    };
+
+                                    if kern_return != mach2::kern_return::KERN_SUCCESS {
+                                        println!("Failed to clean regs: {}", kern_return);
                                     }
                                 }
 
