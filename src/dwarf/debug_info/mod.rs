@@ -65,7 +65,7 @@ impl Abi {
                 match dw_reg {
                     6 => registers.base_pointer(),
                     7 => registers.stack_pointer(),
-                    _ => unimplemented!(),
+                    other => unimplemented!("Not implemented for {}", other),
                 }
             }
             Abi::WindowsMsvc => match dw_reg {
@@ -429,7 +429,8 @@ impl DwarfType {
                 ..
             } => {
                 let tag_byte = if let Some(discr_member_offset) = discr_member_offset {
-                    let tag = syscalls::peek_data(process_handle, address + discr_member_offset)? as u8;
+                    let tag =
+                        syscalls::peek_data(process_handle, address + discr_member_offset)? as u8;
 
                     Some(tag)
                 } else {
@@ -440,8 +441,9 @@ impl DwarfType {
                     .iter()
                     .find(|v| {
                         if let Some(tag_byte) = tag_byte
-                            && let Some(value) = v.discr_value {
-                                return tag_byte == value;
+                            && let Some(value) = v.discr_value
+                        {
+                            return tag_byte == value;
                         }
                         false
                     })
@@ -520,7 +522,14 @@ impl DwarfType {
             } => {
                 // Handle base case for known rust types
                 if name == "String" {
-                    let buffer = get_value!(fields, type_index, "vec", address, process_handle, process_range);
+                    let buffer = get_value!(
+                        fields,
+                        type_index,
+                        "vec",
+                        address,
+                        process_handle,
+                        process_range
+                    );
 
                     if let Some(DebugValue::Vec(buf)) = buffer {
                         let raw_values = to_buffer(&buf);
@@ -531,8 +540,14 @@ impl DwarfType {
                 }
 
                 if name == "PathBuf" {
-                    let inner =
-                        get_value!(fields, type_index, "inner", address, process_handle, process_range);
+                    let inner = get_value!(
+                        fields,
+                        type_index,
+                        "inner",
+                        address,
+                        process_handle,
+                        process_range
+                    );
 
                     if let Some(DebugValue::Vec(buf)) = inner {
                         let raw_values = to_buffer(&buf);
@@ -543,8 +558,22 @@ impl DwarfType {
                 }
 
                 if name.starts_with("Vec<") {
-                    let len = get_value!(fields, type_index, "len", address, process_handle, process_range);
-                    let buf = get_value!(fields, type_index, "buf", address, process_handle, process_range);
+                    let len = get_value!(
+                        fields,
+                        type_index,
+                        "len",
+                        address,
+                        process_handle,
+                        process_range
+                    );
+                    let buf = get_value!(
+                        fields,
+                        type_index,
+                        "buf",
+                        address,
+                        process_handle,
+                        process_range
+                    );
 
                     let value = get_field!(generics, "T");
                     let ty = get_type!(type_index, &value.type_offset);
@@ -583,9 +612,30 @@ impl DwarfType {
                 }
 
                 if name.starts_with("VecDeque<") {
-                    let len = get_value!(fields, type_index, "len", address, process_handle, process_range);
-                    let buf = get_value!(fields, type_index, "buf", address, process_handle, process_range);
-                    let head = get_value!(fields, type_index, "head", address, process_handle, process_range);
+                    let len = get_value!(
+                        fields,
+                        type_index,
+                        "len",
+                        address,
+                        process_handle,
+                        process_range
+                    );
+                    let buf = get_value!(
+                        fields,
+                        type_index,
+                        "buf",
+                        address,
+                        process_handle,
+                        process_range
+                    );
+                    let head = get_value!(
+                        fields,
+                        type_index,
+                        "head",
+                        address,
+                        process_handle,
+                        process_range
+                    );
 
                     let value = get_field!(generics, "T");
                     let ty = get_type!(type_index, &value.type_offset);
@@ -652,7 +702,14 @@ impl DwarfType {
                 }
 
                 if name.starts_with("HashSet<") && fields.iter().any(|s| s.name == "map") {
-                    let map = get_value!(fields, type_index, "map", address, process_handle, process_range);
+                    let map = get_value!(
+                        fields,
+                        type_index,
+                        "map",
+                        address,
+                        process_handle,
+                        process_range
+                    );
 
                     if let Some(DebugValue::HashMap { entries }) = map {
                         let elements: Vec<DebugValue> =
@@ -665,8 +722,14 @@ impl DwarfType {
                 // There are more versions of Hashmap
                 // Only select the one with the table field and have the other ones resolve naturally
                 if name.starts_with("HashMap<") && fields.iter().any(|s| s.name == "table") {
-                    let table =
-                        get_value!(fields, type_index, "table", address, process_handle, process_range);
+                    let table = get_value!(
+                        fields,
+                        type_index,
+                        "table",
+                        address,
+                        process_handle,
+                        process_range
+                    );
 
                     if let Some(DebugValue::RawTableInner {
                         bucket_mask,
@@ -734,7 +797,8 @@ impl DwarfType {
 
                         for i in 0..total_buckets {
                             let ctrl_byte_address = ctrl + i as usize;
-                            let ctrl_byte = os::syscalls::peek_data(process_handle, ctrl_byte_address as u64)?;
+                            let ctrl_byte =
+                                os::syscalls::peek_data(process_handle, ctrl_byte_address as u64)?;
 
                             // If ctrl byte is a tombstone then ignore it
                             if ctrl_byte & 0x80 != 0 {
@@ -777,10 +841,22 @@ impl DwarfType {
                 }
 
                 if name == "RawVecInner<alloc::alloc::Global>" {
-                    let heap_pointer =
-                        get_value!(fields, type_index, "ptr", address, process_handle, process_range);
-                    let capacity =
-                        get_value!(fields, type_index, "cap", address, process_handle, process_range);
+                    let heap_pointer = get_value!(
+                        fields,
+                        type_index,
+                        "ptr",
+                        address,
+                        process_handle,
+                        process_range
+                    );
+                    let capacity = get_value!(
+                        fields,
+                        type_index,
+                        "cap",
+                        address,
+                        process_handle,
+                        process_range
+                    );
 
                     if let (Some(DebugValue::Pointer(ptr)), Some(DebugValue::Usize(cap))) =
                         (heap_pointer, capacity)
@@ -801,7 +877,14 @@ impl DwarfType {
                         process_handle,
                         process_range
                     );
-                    let ctrl = get_value!(fields, type_index, "ctrl", address, process_handle, process_range);
+                    let ctrl = get_value!(
+                        fields,
+                        type_index,
+                        "ctrl",
+                        address,
+                        process_handle,
+                        process_range
+                    );
                     let growth_left = get_value!(
                         fields,
                         type_index,
@@ -810,8 +893,14 @@ impl DwarfType {
                         process_handle,
                         process_range
                     );
-                    let items =
-                        get_value!(fields, type_index, "items", address, process_handle, process_range);
+                    let items = get_value!(
+                        fields,
+                        type_index,
+                        "items",
+                        address,
+                        process_handle,
+                        process_range
+                    );
 
                     if let (
                         Some(DebugValue::Usize(bucket_mask)),
@@ -889,7 +978,8 @@ impl DwarfType {
                             return Ok(Some(DebugValue::InvalidAddress));
                         }
 
-                        let res = syscalls::read_bytes(process_handle, *ptr as usize, *len as usize)?;
+                        let res =
+                            syscalls::read_bytes(process_handle, *ptr as usize, *len as usize)?;
                         let string = String::from_utf8_lossy(&res).into_owned();
 
                         if name == "&str" {
@@ -953,9 +1043,7 @@ impl ExecutionScope {
     /// Returns the bytes instruction if it is a function and has bytes available
     pub fn get_bytes(&self) -> Option<&Vec<u8>> {
         match self {
-            ExecutionScope::Function { bytes, .. } => {
-                bytes.as_ref().map_or(None, Some)
-            }
+            ExecutionScope::Function { bytes, .. } => bytes.as_ref().map_or(None, Some),
             ExecutionScope::Inlined { .. } | ExecutionScope::LexicalBlock => None,
         }
     }
@@ -1011,8 +1099,9 @@ impl DebugVariable {
                     let pieces = evaluation.result();
 
                     if let Some(piece) = pieces.first()
-                        && let gimli::Location::Address { address } = piece.location {
-                            return Ok(Some(address));
+                        && let gimli::Location::Address { address } = piece.location
+                    {
+                        return Ok(Some(address));
                     }
                     break;
                 }
@@ -1168,15 +1257,14 @@ impl DebuggerMetadataCache {
 
     pub fn is_in_inline(&self, pc: u64) -> bool {
         for scope in self.execution_scopes.iter() {
-            if scope.is_in_scope(pc)
-                && scope.find_active_scope(pc).is_some() {
-                    // Update down the tree
-                    // An inline can call a function
-                    if scope.scope.is_func() {
-                        return false;
-                    }
-                    if scope.scope.is_inline() {
-                        return true;
+            if scope.is_in_scope(pc) && scope.find_active_scope(pc).is_some() {
+                // Update down the tree
+                // An inline can call a function
+                if scope.scope.is_func() {
+                    return false;
+                }
+                if scope.scope.is_inline() {
+                    return true;
                 }
             }
         }
@@ -1192,15 +1280,14 @@ impl DebuggerMetadataCache {
         let mut scopes = Vec::new();
 
         for scope in self.execution_scopes.iter() {
-            if scope.is_in_scope(pc)
-                && scope.find_active_scope(pc).is_some() {
-                    if scope.scope.is_inline() {
-                        scopes.push(scope);
-                    } else if scope.scope.is_func() {
-                        scopes.push(scope);
-                    }
+            if scope.is_in_scope(pc) && scope.find_active_scope(pc).is_some() {
+                if scope.scope.is_inline() {
+                    scopes.push(scope);
+                } else if scope.scope.is_func() {
+                    scopes.push(scope);
                 }
             }
+        }
 
         scopes
     }

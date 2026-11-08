@@ -87,9 +87,9 @@ pub fn step(port: ProcessHandle, thread: u32) -> Result<(), MacOSError> {
         regs.__rflags |= TRAP_FLAG;
     }
 
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(target_arch = "aarch64")]
     {
-        regs.__cpsr |= TRAP_FLAG;
+        regs.__cpsr |= SS_FLAG;
     }
 
     let mut kern_return = unsafe {
@@ -165,7 +165,8 @@ pub fn write_data(port: ProcessHandle, address: u64, data: &[u8]) -> Result<(), 
             eprintln!("Could not protect address : {}", kern_return);
         }
 
-        kern_return = mach2::vm::mach_vm_write(port, address, data.as_ptr() as usize, 1);
+        kern_return =
+            mach2::vm::mach_vm_write(port, address, data.as_ptr() as usize, data.len() as u32);
 
         if kern_return != mach2::kern_return::KERN_SUCCESS {
             eprintln!("Could not write to address : {}", kern_return);

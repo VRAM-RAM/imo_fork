@@ -515,8 +515,9 @@ fn dump_unit<'a>(
                                 }
 
                                 if let (Some(name), Some(type_offset)) = (name, type_offset)
-                                    && !generics.iter().any(|g| g.name == name) {
-                                        generics.push(GenericField { name, type_offset });
+                                    && !generics.iter().any(|g| g.name == name)
+                                {
+                                    generics.push(GenericField { name, type_offset });
                                 }
                             }
                             // Descend to the variant part

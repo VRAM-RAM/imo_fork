@@ -71,7 +71,7 @@ pub struct DebugSession {
     pub crashed_thread: u32,
 
     #[cfg(target_os = "macos")]
-    pub unwind_info: Option<macho_unwind_info::UnwindInfo<'static>>
+    pub unwind_info: Option<macho_unwind_info::UnwindInfo<'static>>,
 }
 
 impl DebugSession {
@@ -97,7 +97,7 @@ impl DebugSession {
             crashed_thread: 0,
 
             #[cfg(target_os = "macos")]
-            unwind_info: None
+            unwind_info: None,
         }
     }
 
@@ -120,7 +120,7 @@ impl DebugSession {
             let file = std::fs::File::open(&binary_path)?;
             let mmap = unsafe { memmap2::Mmap::map(&file)? };
             let object = object::File::parse(&*mmap)?;
-            
+
             let unwind_info = object.section_by_name_bytes(b"__unwind_info").unwrap();
             let data = unwind_info.data().unwrap().to_vec();
             let slice: &'static [u8] = Box::leak(data.into_boxed_slice());
@@ -142,13 +142,13 @@ impl DebugSession {
             let file = std::fs::File::open(&binary_path)?;
             let mmap = unsafe { memmap2::Mmap::map(&file)? };
             let object = object::File::parse(&*mmap)?;
-            
+
             session.metadata = DebuggerMetadataCache::new(&object)?;
             // Update line index and address to location
             dwarf::debug_line::setup_session_cache(&object, &mut session)?;
             session.raw_debug_frame = setup_session_debug_frame(&object)?;
         }
-        
+
         session.update_process_addresses()?;
 
         session.set_up_line_row();
@@ -164,14 +164,14 @@ impl DebugSession {
 
         let dsym_dir = format!("{}.dSYM", &file_name);
         dsym_path.set_file_name(dsym_dir);
-        
+
         dsym_path.push("Contents");
         dsym_path.push("Resources");
         dsym_path.push("DWARF");
         dsym_path.push(&file_name);
 
         if dsym_path.exists() {
-            return dsym_path
+            return dsym_path;
         }
 
         todo!()
@@ -258,14 +258,12 @@ impl DebugSession {
         virtual_registers: &VirtualRegisters,
     ) -> Option<u64> {
         match self.metadata.abi {
-            Abi::SystemV => {
-                match register.0 {
+            Abi::SystemV => match register.0 {
                 6 => Some(virtual_registers.base_pointer),
                 7 => Some(virtual_registers.stack_pointer),
                 16 => Some(virtual_registers.instruction_pointer),
                 _ => todo!("Not implemented yet {}", register.0),
-            }
-            }
+            },
             _ => Some(0),
         }
     }
@@ -278,14 +276,13 @@ impl DebugSession {
 
         loop {
             let instruction_pointer = virtual_registers.instruction_pointer;
-            if !self
-                .process_map
-                .is_ip_valid(instruction_pointer)
-            {
+            if !self.process_map.is_ip_valid(instruction_pointer) {
                 break;
             }
-            
-            let trace = self.metadata.get_function_trace(virtual_registers.current_pc(self.base_address));
+
+            let trace = self
+                .metadata
+                .get_function_trace(virtual_registers.current_pc(self.base_address));
 
             for scope in trace {
                 match &scope.scope {
@@ -360,7 +357,7 @@ impl DebugSession {
 
         #[cfg(target_os = "macos")]
         {
-            #[cfg(target_arch = "x86_64")] 
+            #[cfg(target_arch = "x86_64")]
             {
                 use macho_unwind_info::opcodes::OpcodeX86_64;
 
@@ -369,15 +366,23 @@ impl DebugSession {
                         if let Ok(Some(func)) = info.lookup(current_pc as u32) {
                             // TODO: Support other OS
                             match OpcodeX86_64::parse(func.opcode) {
-                                OpcodeX86_64::FrameBased { stack_offset_in_bytes, saved_regs } => {
+                                OpcodeX86_64::FrameBased {
+                                    stack_offset_in_bytes,
+                                    saved_regs,
+                                } => {
                                     let read_address = |process_handle: u32, addr: u64| {
-                                        syscalls::peek_data(process_handle, addr).map(|val| val as u64).unwrap()
+                                        syscalls::peek_data(process_handle, addr)
+                                            .map(|val| val as u64)
+                                            .unwrap()
                                     };
 
-                                    // Read the current instruction the being executed 
+                                    // Read the current instruction the being executed
                                     // RIP points to the next instuction so rip - 1 is needed to get
                                     // current instuction
-                                    let instruction = read_address(self.process_handle, regs.instruction_pointer - 1);
+                                    let instruction = read_address(
+                                        self.process_handle,
+                                        regs.instruction_pointer - 1,
+                                    );
                                     let bytes: [u8; 8] = instruction.to_le_bytes();
 
                                     // Inspect to see if the program is currently within a function
@@ -385,81 +390,91 @@ impl DebugSession {
                                     match (bytes[0], bytes[1], bytes[2], bytes[3]) {
                                         // The pushq instruction has not run yet. The stack pointer
                                         // points to the return address
-                                        (0x00, 0x55, 0x48, 0x89) | (0x90, 0x55, 0x48, 0x89 )=> {
-                                            regs.instruction_pointer =  read_address(self.process_handle, regs.stack_pointer);
+                                        (0x00, 0x55, 0x48, 0x89) | (0x90, 0x55, 0x48, 0x89) => {
+                                            regs.instruction_pointer = read_address(
+                                                self.process_handle,
+                                                regs.stack_pointer,
+                                            );
                                         }
                                         // The return address has been allocated but the base
                                         // pointer has not been set up
                                         // Read the stack pointer from the address it was allocated
                                         // to
                                         //
-                                        // Corresponds to 
+                                        // Corresponds to
                                         //      push rbp
                                         //      mov rbp, rsp
                                         (0x55, 0x48, 0x89, 0xE5) => {
-                                            regs.instruction_pointer =  read_address(self.process_handle, regs.stack_pointer + 8);
+                                            regs.instruction_pointer = read_address(
+                                                self.process_handle,
+                                                regs.stack_pointer + 8,
+                                            );
                                         }
                                         // Not within the prologue. Normal execution
                                         _ => {
-                                            let cfa = regs.base_pointer + 16;  
+                                            let cfa = regs.base_pointer + 16;
                                             let return_address = regs.base_pointer + 8;
                                             let base_pointer = regs.base_pointer;
 
-                                            regs.stack_pointer = cfa; 
-                                            regs.instruction_pointer = read_address(self.process_handle, return_address);
-                                            regs.base_pointer = read_address(self.process_handle, base_pointer);
+                                            regs.stack_pointer = cfa;
+                                            regs.instruction_pointer =
+                                                read_address(self.process_handle, return_address);
+                                            regs.base_pointer =
+                                                read_address(self.process_handle, base_pointer);
                                         }
                                     }
-                                    
+
                                     return Some(regs.instruction_pointer);
                                 }
                                 // DWARF falls back to the cached __eh_frame section
                                 OpcodeX86_64::Dwarf { .. } => {}
-                                _ => todo!()
+                                _ => todo!(),
                             }
                         }
-                    },
-                    None => unreachable!()
+                    }
+                    None => unreachable!(),
                 }
             }
 
-        #[cfg(target_arch = "aarch64")]
-        {
-            use macho_unwind_info::opcodes::OpcodeArm64;
+            #[cfg(target_arch = "aarch64")]
+            {
+                use macho_unwind_info::opcodes::OpcodeArm64;
 
-            match &self.unwind_info {
-                Some(info) => {
-                   if let Ok(Some(func)) = info.lookup(current_pc as u32) {
-                       match OpcodeArm64::parse(func.opcode) {
-                            OpcodeArm64::FrameBased { .. } => {
-                                let read_address = |process_handle: u32, addr: u64| {
-                                    syscalls::peek_data(process_handle, addr).map(|val| val as u64).unwrap()
-                                };
+                match &self.unwind_info {
+                    Some(info) => {
+                        if let Ok(Some(func)) = info.lookup(current_pc as u32) {
+                            match OpcodeArm64::parse(func.opcode) {
+                                OpcodeArm64::FrameBased { .. } => {
+                                    let read_address = |process_handle: u32, addr: u64| {
+                                        syscalls::peek_data(process_handle, addr)
+                                            .map(|val| val as u64)
+                                            .unwrap()
+                                    };
 
-                                // TODO: Handle the case where it might be in function prologue
-                                let cfa = regs.base_pointer + 16;  
-                                let return_address = regs.base_pointer + 8;
-                                let base_pointer = regs.base_pointer;
+                                    // TODO: Handle the case where it might be in function prologue
+                                    let cfa = regs.base_pointer + 16;
+                                    let return_address = regs.base_pointer + 8;
+                                    let base_pointer = regs.base_pointer;
 
-                                regs.stack_pointer = cfa; 
-                                regs.instruction_pointer = read_address(self.process_handle, return_address);
-                                regs.base_pointer = read_address(self.process_handle, base_pointer);
-
+                                    regs.stack_pointer = cfa;
+                                    regs.instruction_pointer =
+                                        read_address(self.process_handle, return_address);
+                                    regs.base_pointer =
+                                        read_address(self.process_handle, base_pointer);
+                                }
+                                OpcodeArm64::Dwarf { .. } => {}
+                                _ => todo!(),
                             }
-                            OpcodeArm64::Dwarf { .. } => {}
-                            _ => todo!()
-                       }
-                   }
-                } 
-                None => unreachable!()
-            }                
-        }
-
+                        }
+                    }
+                    None => unreachable!(),
+                }
+            }
         }
 
         let eh_frame = self.get_unwind_table();
         let base_addresses = &self.metadata.base_addresses;
-        
+
         if let Ok(fde) =
             eh_frame.fde_for_address(base_addresses, current_pc, |sections, bases, offset| {
                 sections.cie_from_offset(bases, offset)
@@ -485,7 +500,8 @@ impl DebugSession {
                     {
                         let base_pointer = cfa_address - 16;
                         regs.base_pointer = syscalls::peek_data(self.process_handle, base_pointer)
-                            .map(|bp| bp as u64).ok()?;
+                            .map(|bp| bp as u64)
+                            .ok()?;
                     }
 
                     if let Some(ra_rule) = row.register(ra_register) {
@@ -494,7 +510,8 @@ impl DebugSession {
                                 let ra_storage_address = (cfa_address as i64 + offset) as u64;
 
                                 let return_address =
-                                    syscalls::peek_data(self.process_handle, ra_storage_address).ok()? as u64;
+                                    syscalls::peek_data(self.process_handle, ra_storage_address)
+                                        .ok()? as u64;
                                 Some(return_address)
                             }
                             gimli::RegisterRule::Register(saved_reg) => {
@@ -727,7 +744,7 @@ impl DebugSession {
 
     /// Get the relative address from absolute address
     pub fn get_relative_address(&self, absolute_address: u64) -> u64 {
-        #[cfg(target_os = "macos")] 
+        #[cfg(target_os = "macos")]
         {
             let relative = absolute_address - self.base_address;
             relative + 0x1_0000_0000
@@ -736,7 +753,7 @@ impl DebugSession {
         #[cfg(not(target_os = "macos"))]
         {
             absolute_address - self.base_address
-        }        
+        }
     }
 
     /// Find current scope with internal pc
@@ -744,7 +761,9 @@ impl DebugSession {
         &self,
         param_type: ParamType,
     ) -> Result<ActiveParamsContext<'_>, SystemError> {
-        let context = self.metadata.find_scope_by_pc(self.current_pc()?, param_type);
+        let context = self
+            .metadata
+            .find_scope_by_pc(self.current_pc()?, param_type);
         Ok(context)
     }
 
@@ -880,20 +899,21 @@ impl DebugSession {
         // Store these breakpoints and their indices
         for (idx, opt_bp) in self.breakpoint_index_tracker.iter_mut().enumerate() {
             if let Some(bp) = opt_bp {
-                if !filter_by_file 
-                    && bp.line == line_number {
-                        if let Some(removed_bp) = opt_bp.take() {
-                            cleared_breakpoints.push(removed_bp);
-                            bp_idx.push(idx + 1);
-                        }
+                if !filter_by_file && bp.line == line_number {
+                    if let Some(removed_bp) = opt_bp.take() {
+                        cleared_breakpoints.push(removed_bp);
+                        bp_idx.push(idx + 1);
+                    }
                 } else {
                     if let Some(bp_file) = bp.file.to_str() {
                         // Safe unwrap since this is the path where the file is Some
-                        if bp.line == line_number && bp_file.ends_with(file.unwrap())
-                            && let Some(removed_bp) = opt_bp.take() {
-                                cleared_breakpoints.push(removed_bp);
-                                bp_idx.push(idx + 1);
-                            }
+                        if bp.line == line_number
+                            && bp_file.ends_with(file.unwrap())
+                            && let Some(removed_bp) = opt_bp.take()
+                        {
+                            cleared_breakpoints.push(removed_bp);
+                            bp_idx.push(idx + 1);
+                        }
                     } else {
                         eprintln!("[Warning] Failed to convert file path at index {}", idx)
                     }
@@ -1055,8 +1075,8 @@ impl DebugSession {
     /// Get absolute address ( the sum of base address and absolute address )
     pub fn get_absolute_address(&self, relative_address: u64) -> u64 {
         if cfg!(target_os = "macos") {
-            let offset = relative_address - 0x1_0000_0000; 
-            self.base_address + offset 
+            let offset = relative_address - 0x1_0000_0000;
+            self.base_address + offset
         } else {
             self.base_address + relative_address
         }

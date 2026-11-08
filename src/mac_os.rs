@@ -2,8 +2,8 @@ use crate::cli::handle_user_debugger_menu;
 use crate::error::DebuggerError;
 use crate::session::{self, execution::CurrentStopCmd};
 use crate::sys::{
-    macos::{error::MacOSError, THREAD_STATE64},
-    os::{syscalls, MessageReply, PlatformRegStruct},
+    macos::{THREAD_STATE64, error::MacOSError},
+    os::{MessageReply, PlatformRegStruct, syscalls},
     registers::RegisterViewer,
 };
 
@@ -13,7 +13,10 @@ use crate::sys::macos::TRAP_FLAG;
 #[cfg(target_arch = "aarch64")]
 use crate::sys::macos::SS_FLAG;
 
-use mach2::{kern_return, mach_types, traps};
+use mach2::mach_types::thread_port_t;
+use mach2::message::mach_msg_type_number_t;
+use mach2::thread_status::thread_state_t;
+use mach2::{kern_return, mach_types, traps, kern_return::kern_return_t};
 use rustyline::DefaultEditor;
 
 // Get the relative address of the instruction pointer in the text segment
@@ -40,6 +43,24 @@ macro_rules! get_sp {
 
         sp
     }};
+}
+
+/// Updates the register of the target thread, with the [`THREAD_STATE64`] flavor.
+/// 
+/// Used by [`debug`].
+/// 
+/// For more informations, please refeer to :
+/// 
+/// - https://web.mit.edu/darwin/src/modules/xnu/osfmk/man/thread_set_state.html
+unsafe fn update_registers(target: thread_port_t, new_state: thread_state_t, new_state_cnt: mach_msg_type_number_t) -> kern_return_t {
+    unsafe {
+        mach2::thread_act::thread_set_state(
+            target,
+            THREAD_STATE64,
+            new_state,
+            new_state_cnt,
+        )
+    }
 }
 
 pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerError> {
@@ -250,7 +271,7 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                         msgh_voucher_port: mach2::port::MACH_PORT_NULL,
                                         msgh_id: header.msgh_id + 100,
                                     },
-                                    NDR: unsafe { mach2::ndr::NDR_record },
+                                    ndr: unsafe { mach2::ndr::NDR_record },
                                     kern_return: kern_return::KERN_SUCCESS,
                                 };
 
@@ -272,21 +293,13 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                     println!("Could not revive thread: {}", kern_return);
                                 }
 
-                                // TODO: Combine these similar functionalities
                                 // Ensure trap flag is cleared after each iteration
                                 #[cfg(target_arch = "x86_64")]
                                 {
                                     if regs.__rflags & TRAP_FLAG > 0 {
                                         regs.__rflags &= !TRAP_FLAG;
                                         // Update register with the cleared Trap Flag
-                                        kern_return = unsafe {
-                                            mach2::thread_act::thread_set_state(
-                                                crashed_thread,
-                                                THREAD_STATE64,
-                                                std::mem::transmute(&regs),
-                                                regs_count,
-                                            )
-                                        };
+                                        kern_return = unsafe { update_registers(crashed_thread, std::mem::transmute(&regs), regs_count) };
 
                                         if kern_return != mach2::kern_return::KERN_SUCCESS {
                                             println!("Failed to clean regs: {}", kern_return);
@@ -300,14 +313,7 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                         regs.__cpsr &= !SS_FLAG;
                                     }
                                     // Update register with the cleared Trap Flag
-                                    kern_return = unsafe {
-                                        mach2::thread_act::thread_set_state(
-                                            crashed_thread,
-                                            THREAD_STATE64,
-                                            std::mem::transmute(&regs),
-                                            regs_count,
-                                        )
-                                    };
+                                    kern_return = unsafe { update_registers(crashed_thread, std::mem::transmute(&regs), regs_count) };
 
                                     if kern_return != mach2::kern_return::KERN_SUCCESS {
                                         println!("Failed to clean regs: {}", kern_return);

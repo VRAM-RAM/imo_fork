@@ -1,3 +1,14 @@
 /target/debug
 /target
 /src/test/out
+
+# MacOS
+.DS_Store
+
+# Test (cargo run -- test)
+test
+test.rs
+/test.dSYM
+
+# A list of all the todos of the codebase
+TODO.md
