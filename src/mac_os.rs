@@ -16,7 +16,7 @@ use crate::sys::macos::SS_FLAG;
 use mach2::mach_types::thread_port_t;
 use mach2::message::mach_msg_type_number_t;
 use mach2::thread_status::thread_state_t;
-use mach2::{kern_return, mach_types, traps, kern_return::kern_return_t};
+use mach2::{kern_return, kern_return::kern_return_t, mach_types, traps};
 use rustyline::DefaultEditor;
 
 // Get the relative address of the instruction pointer in the text segment
@@ -46,21 +46,18 @@ macro_rules! get_sp {
 }
 
 /// Updates the register of the target thread, with the [`THREAD_STATE64`] flavor.
-/// 
+///
 /// Used by [`debug`].
-/// 
+///
 /// For more informations, please refeer to :
-/// 
+///
 /// - https://web.mit.edu/darwin/src/modules/xnu/osfmk/man/thread_set_state.html
-unsafe fn update_registers(target: thread_port_t, new_state: thread_state_t, new_state_cnt: mach_msg_type_number_t) -> kern_return_t {
-    unsafe {
-        mach2::thread_act::thread_set_state(
-            target,
-            THREAD_STATE64,
-            new_state,
-            new_state_cnt,
-        )
-    }
+unsafe fn update_registers(
+    target: thread_port_t,
+    new_state: thread_state_t,
+    new_state_cnt: mach_msg_type_number_t,
+) -> kern_return_t {
+    unsafe { mach2::thread_act::thread_set_state(target, THREAD_STATE64, new_state, new_state_cnt) }
 }
 
 pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerError> {
@@ -299,7 +296,13 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                     if regs.__rflags & TRAP_FLAG > 0 {
                                         regs.__rflags &= !TRAP_FLAG;
                                         // Update register with the cleared Trap Flag
-                                        kern_return = unsafe { update_registers(crashed_thread, std::mem::transmute(&regs), regs_count) };
+                                        kern_return = unsafe {
+                                            update_registers(
+                                                crashed_thread,
+                                                std::mem::transmute(&regs),
+                                                regs_count,
+                                            )
+                                        };
 
                                         if kern_return != mach2::kern_return::KERN_SUCCESS {
                                             println!("Failed to clean regs: {}", kern_return);
@@ -313,7 +316,13 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                         regs.__cpsr &= !SS_FLAG;
                                     }
                                     // Update register with the cleared Trap Flag
-                                    kern_return = unsafe { update_registers(crashed_thread, std::mem::transmute(&regs), regs_count) };
+                                    kern_return = unsafe {
+                                        update_registers(
+                                            crashed_thread,
+                                            std::mem::transmute(&regs),
+                                            regs_count,
+                                        )
+                                    };
 
                                     if kern_return != mach2::kern_return::KERN_SUCCESS {
                                         println!("Failed to clean regs: {}", kern_return);

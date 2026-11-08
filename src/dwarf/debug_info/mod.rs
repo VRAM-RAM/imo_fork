@@ -11,8 +11,8 @@ use crate::dwarf::debug_info::error::DebugInfoError;
 use crate::dwarf::evaluate_frame_base_bytes;
 use crate::session::error::VariableParseError;
 use crate::session::variable::{DebugStructField, DebugValue, WrapperKind, to_buffer};
-use crate::sys::os;
 use crate::sys::{ProcessMemoryMap, SystemError};
+use crate::sys::{os, registers};
 use crate::sys::{os::syscalls, registers::RegisterViewer};
 use crate::types::UniqueFileId;
 
@@ -42,6 +42,12 @@ pub enum Abi {
     SystemV,
     WindowsMsvc,
     Unknown,
+    /// ABI of `macOS` on `arm64`
+    ///
+    /// Todo : Check on a Linux Arm device (VM) if it's the same for arm64 on linux, and
+    /// tranform MacOSAAPCS64 into a general AAPCS64 for both MacOS and Linux.
+    /// (or distinguish MacOSAAPCS64 and AAPCS64)
+    MacOSAAPCS64,
 }
 
 impl Abi {
@@ -50,14 +56,26 @@ impl Abi {
         match format {
             BinaryFormat::Xcoff => Self::SystemV,
             BinaryFormat::Elf => Self::SystemV,
+
+            #[cfg(target_arch = "x86_64")]
             BinaryFormat::MachO => Self::SystemV,
+
+            #[cfg(target_arch = "aarch64")]
+            BinaryFormat::MachO => Self::MacOSAAPCS64,
+
             BinaryFormat::Coff => Self::WindowsMsvc,
             _ => Self::Unknown,
         }
     }
 
     /// Get register value using the dw_register index
-    /// Use ABI to differentiate between different binary layout
+    /// Use ABI to differentiate between different binary layout.
+    ///
+    /// For `SystemV` **ABI**, please refeer to :
+    /// - https://refspecs.linuxfoundation.org/elf/x86_64-SysV-psABI.pdf?utm_source=chatgpt.com
+    ///
+    /// For `AAPCS64`, please refeer to :
+    /// - https://github.com/ARM-software/abi-aa/blob/main/aadwarf64/aadwarf64.rst?utm_source=chatgpt.com#dwarf-register-names
     pub fn get_register_value(&self, dw_reg: u16, registers: &RegisterViewer) -> u64 {
         match self {
             Abi::SystemV => {
@@ -68,10 +86,17 @@ impl Abi {
                     other => unimplemented!("Not implemented for {}", other),
                 }
             }
+
             Abi::WindowsMsvc => match dw_reg {
                 13 => registers.base_pointer(),
                 23 => registers.stack_pointer(),
                 _ => unimplemented!(),
+            },
+
+            Abi::MacOSAAPCS64 => match dw_reg {
+                29 => registers.base_pointer(),
+                31 => registers.stack_pointer(),
+                other => unimplemented!("Not implemented for {}", other),
             },
             _ => unimplemented!("Does not support abi yet"),
         }

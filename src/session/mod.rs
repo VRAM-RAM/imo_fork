@@ -624,6 +624,7 @@ impl DebugSession {
             start_line: current_location.line,
             started_from_inline: is_inline,
         };
+
         self.single_step()
     }
 
