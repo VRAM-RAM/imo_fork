@@ -264,6 +264,14 @@ impl DebugSession {
                 16 => Some(virtual_registers.instruction_pointer),
                 _ => todo!("Not implemented yet {}", register.0),
             },
+
+            Abi::MacOSAAPCS64 => match register.0 {
+                29 => Some(virtual_registers.base_pointer),
+                31 => Some(virtual_registers.stack_pointer),
+                32 => Some(virtual_registers.instruction_pointer),
+                other => unimplemented!("Not implemented for {}", other),
+            },
+
             _ => Some(0),
         }
     }
@@ -351,7 +359,7 @@ impl DebugSession {
     }
 
     /// Get return address based on the provided register values
-    /// Also updates the regsiter values so it does not go out of state
+    /// Also updates the register values so it does not go out of state
     pub fn get_return_address(&self, regs: &mut VirtualRegisters) -> Option<u64> {
         let current_pc = regs.current_pc(self.base_address);
 
@@ -567,9 +575,7 @@ impl DebugSession {
         syscalls::continue_session(self.process_handle)
     }
 
-    // ========================================
     // CLI Commands
-    // ========================================
 
     pub fn is_idle(&self) -> bool {
         self.current_cmd.is_idle()
@@ -602,17 +608,20 @@ impl DebugSession {
             start_file: current_location.file,
             start_line: current_location.line,
         };
+
         self.single_step()
     }
 
     pub fn begin_step_over(&mut self) -> Result<(), SystemError> {
         self.invalidate_register();
+
         let Some(current_location) = self.current_location() else {
             // Find a valid location to start from
             // This makes it possible to compare with the destination
 
             self.current_cmd = CurrentStopCmd::SearchingForValidLocation;
             self.single_step()?;
+
             return Ok(());
         };
 
@@ -734,9 +743,7 @@ impl DebugSession {
         syscalls::update_process_addresses(self)
     }
 
-    // =================================================================
     // Other Methods
-    // =================================================================
 
     /// Obtain the location that an address belongs to within the program
     pub fn get_location_with_address(&self, relative_address: u64) -> Option<&SourceLocation> {

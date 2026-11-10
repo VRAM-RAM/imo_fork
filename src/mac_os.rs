@@ -1,9 +1,10 @@
 use crate::cli::handle_user_debugger_menu;
 use crate::error::DebuggerError;
+use crate::session::DebugSession;
 use crate::session::{self, execution::CurrentStopCmd};
 use crate::sys::{
     macos::{THREAD_STATE64, error::MacOSError},
-    os::{MessageReply, PlatformRegStruct, syscalls},
+    os::{MessageReply, PlatformRegStruct},
     registers::RegisterViewer,
 };
 
@@ -11,12 +12,14 @@ use crate::sys::{
 use crate::sys::macos::TRAP_FLAG;
 
 #[cfg(target_arch = "aarch64")]
-use crate::sys::macos::SS_FLAG;
+use crate::sys::macos::{ARM_DEBUG_STATE64, ARM_DEBUG_STATE64_COUNT, ArmDebugState64};
 
 use mach2::mach_types::thread_port_t;
 use mach2::message::mach_msg_type_number_t;
+#[cfg(target_arch = "aarch64")]
+use mach2::thread_act::{thread_get_state, thread_set_state};
 use mach2::thread_status::thread_state_t;
-use mach2::{kern_return, kern_return::kern_return_t, mach_types, traps};
+use mach2::{kern_return, kern_return::kern_return_t, traps};
 use rustyline::DefaultEditor;
 
 // Get the relative address of the instruction pointer in the text segment
@@ -58,6 +61,67 @@ unsafe fn update_registers(
     new_state_cnt: mach_msg_type_number_t,
 ) -> kern_return_t {
     unsafe { mach2::thread_act::thread_set_state(target, THREAD_STATE64, new_state, new_state_cnt) }
+}
+
+#[cfg(target_arch = "aarch64")]
+/// Sets the single step, on macOS `aarch64`.
+///
+/// Uses [`ArmDebugState64`].
+fn set_single_step(thread: u32, on: bool) -> Result<(), MacOSError> {
+    let mut st = ArmDebugState64::default(); // bvr/bcr/wvr/wcr all zero
+    st.mdscr_el1 = if on { 1 } else { 0 }; // bit 0 = MDSCR_EL1.SS
+    let kr = unsafe {
+        mach2::thread_act::thread_set_state(
+            thread,
+            ARM_DEBUG_STATE64 as i32,
+            &mut st as *mut _ as *mut u32,
+            130,
+        )
+    };
+
+    if kr != mach2::kern_return::KERN_SUCCESS {
+        println!("Failed to update ARM_DEBUG_STATE64 {}", kr)
+    }
+
+    Ok(())
+}
+
+fn handle_breakpoint_cleaning(
+    session: &mut DebugSession,
+    regs: mach2::structs::arm_thread_state64_t,
+    target: thread_port_t,
+    regs_count: u32,
+    child_task_port: u32,
+) -> Result<(), DebuggerError> {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    let breakpoint_addr = regs.__rip - 1;
+
+    #[cfg(target_arch = "aarch64")]
+    let breakpoint_addr = regs.__pc;
+
+    if let Some(bp) = session.active_breakpoints.get_mut(&breakpoint_addr) {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            regs.__rip = breakpoint_addr;
+        }
+
+        let kern_return =
+            unsafe { update_registers(target, std::mem::transmute(&regs), regs_count) };
+
+        if kern_return != kern_return::KERN_SUCCESS {
+            println!("Failed to update regs: {}", kern_return);
+        }
+
+        session.registers = Some(RegisterViewer { regs });
+
+        bp.breakpoint.disable(child_task_port)?;
+
+        if kern_return != mach2::kern_return::KERN_SUCCESS {
+            println!("Could not revive thread: {}", kern_return);
+        }
+    }
+
+    Ok(())
 }
 
 pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerError> {
@@ -178,7 +242,6 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
 
         let mut buffer: [u8; 256] = [0; 256];
 
-        let mut msg_header = mach2::message::mach_msg_header_t::default();
         let option = mach2::message::MACH_RCV_MSG;
         let send_size = 0;
         let recieve_size = 256;
@@ -228,14 +291,23 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
 
                         return Ok(());
                     }
+
                     72 => {
                         println!("Child finished");
                         return Ok(());
                     }
+
                     2401 | 2405 => {
                         let exception_offset = if header.msgh_id == 2401 { 60 } else { 64 };
                         let exception =
                             unsafe { *(base_ptr.wrapping_add(exception_offset) as *const u32) };
+
+                        println!(
+                            "[MACH] message_id={}, exception={}, thread={:#x}",
+                            header.msgh_id,
+                            exception,
+                            unsafe { *(base_ptr.wrapping_add(28) as *const u32) }
+                        );
 
                         match exception {
                             // Software Breakpoint
@@ -312,9 +384,12 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
 
                                 #[cfg(target_arch = "aarch64")]
                                 {
+                                    use crate::sys::macos::SS_FLAG;
+
                                     if regs.__cpsr & SS_FLAG > 0 {
                                         regs.__cpsr &= !SS_FLAG;
                                     }
+
                                     // Update register with the cleared Trap Flag
                                     kern_return = unsafe {
                                         update_registers(
@@ -331,10 +406,30 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
 
                                 session.registers = Some(RegisterViewer { regs });
 
+                                // We clean the breakpoint
+                                handle_breakpoint_cleaning(
+                                    &mut session,
+                                    regs,
+                                    crashed_thread,
+                                    regs_count,
+                                    child_task_port,
+                                )?;
+
+                                // If the command is `single_step` or `step_into`, we enable the single step
+                                set_single_step(
+                                    crashed_thread,
+                                    matches!(
+                                        session.current_cmd,
+                                        CurrentStopCmd::SingleStep
+                                            | CurrentStopCmd::StepInto { .. }
+                                    ),
+                                )?;
+
                                 match session.current_cmd {
                                     CurrentStopCmd::SingleStep => {
                                         session.current_cmd = CurrentStopCmd::Completed;
                                     }
+
                                     CurrentStopCmd::StepInto {
                                         start_file,
                                         start_line,
@@ -356,13 +451,14 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                             session.single_step()?;
                                         }
                                     }
+
                                     CurrentStopCmd::StepOver {
                                         start_stack_pointer,
                                         start_file,
                                         start_line,
                                         started_from_inline,
                                     } => {
-                                        let current_rsp = get_sp!(regs);
+                                        let current_rsp: u64 = get_sp!(regs);
 
                                         // If current rsp is greater than the start rsp then we stepped out of a function and should stop there
                                         if current_rsp > start_stack_pointer {
@@ -372,10 +468,22 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                         else if current_rsp == start_stack_pointer {
                                             // We need location so keep stepping until we find a valid one
                                             let pc = get_pc!(regs, session.base_address);
+
+                                            // TO SUPPRESS!
+                                            println!(
+                                                "[STEP_OVER] PC={:#x}, SP={:#x}, START_SP={:#x}",
+                                                pc, current_rsp, start_stack_pointer
+                                            );
+
                                             let Some(line_row) = session.find_line_range(pc) else {
                                                 session.single_step()?;
                                                 continue;
                                             };
+
+                                            println!(
+                                                "[STEP_OVER] line_row found: {}, is_stmt: {}",
+                                                line_row.location.line, line_row.is_stmt
+                                            );
 
                                             if !line_row.is_stmt {
                                                 session.single_step()?;
@@ -383,6 +491,14 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                             }
 
                                             let current_location = &line_row.location;
+
+                                            println!(
+                                                "[STEP_OVER] start={:?}:{} current={:?}:{:?}",
+                                                start_file,
+                                                start_line,
+                                                current_location.file,
+                                                current_location.line
+                                            );
 
                                             // If its not an inline function just step till we areaddress_range. back in same file but not same line
                                             if !started_from_inline {
@@ -399,6 +515,7 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                                 // normal stepover with the inclusion
                                                 // that it can now step out to a function that is not inlined
                                                 let pc = get_pc!(regs, session.base_address);
+
                                                 if (start_file == current_location.file
                                                     && start_line != current_location.line)
                                                     || !session.metadata.is_in_inline(pc)
@@ -432,6 +549,7 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                             session.continue_session()?;
                                         }
                                     }
+
                                     CurrentStopCmd::StepOut {
                                         original_stack_pointer,
                                         original_file,
@@ -439,35 +557,11 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                         return_address,
                                         started_from_inline,
                                     } => {
-                                        // Simply clear breakpoint and send data back to finish stepover to handle completion
                                         #[cfg(target_arch = "x86_64")]
                                         let breakpoint_addr = regs.__rip - 1;
 
                                         #[cfg(target_arch = "aarch64")]
                                         let breakpoint_addr = regs.__pc;
-
-                                        let relative_address =
-                                            session.get_relative_address(breakpoint_addr);
-                                        session.clear_specific_breakpoint(relative_address)?;
-
-                                        #[cfg(target_arch = "x86_64")]
-                                        {
-                                            regs.__rip = breakpoint_addr;
-                                        }
-
-                                        kern_return = unsafe {
-                                            mach2::thread_act::thread_set_state(
-                                                crashed_thread,
-                                                THREAD_STATE64,
-                                                std::mem::transmute(&regs),
-                                                regs_count,
-                                            )
-                                        };
-
-                                        if kern_return != kern_return::KERN_SUCCESS {
-                                            println!("Failed to update regs: {}", kern_return);
-                                        }
-                                        session.registers = Some(RegisterViewer { regs });
 
                                         if return_address == breakpoint_addr {
                                             // If we are at the specific breakpoint to step out from then continue step over like normal
@@ -483,6 +577,7 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                             session.continue_session()?;
                                         }
                                     }
+
                                     CurrentStopCmd::FinishStepOver {
                                         original_stack_pointer,
                                         original_file,
@@ -554,29 +649,6 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                         #[cfg(target_arch = "aarch64")]
                                         let breakpoint_addr = regs.__pc;
 
-                                        let relative_address =
-                                            session.get_relative_address(breakpoint_addr);
-                                        session.clear_specific_breakpoint(relative_address)?;
-
-                                        #[cfg(target_arch = "x86_64")]
-                                        {
-                                            regs.__rip = breakpoint_addr;
-                                        }
-
-                                        kern_return = unsafe {
-                                            mach2::thread_act::thread_set_state(
-                                                crashed_thread,
-                                                THREAD_STATE64,
-                                                std::mem::transmute(&regs),
-                                                regs_count,
-                                            )
-                                        };
-
-                                        if kern_return != kern_return::KERN_SUCCESS {
-                                            println!("Failed to update regs: {}", kern_return);
-                                        }
-
-                                        session.registers = Some(RegisterViewer { regs });
                                         if return_address == breakpoint_addr {
                                             // If we are at the specific breakpoint to step out from then continue step over like normal
                                             session.current_cmd = CurrentStopCmd::CompleteFinish {
@@ -615,52 +687,12 @@ pub fn debug(rl: &mut DefaultEditor, binary_path: &str) -> Result<(), DebuggerEr
                                             session.single_step()?;
                                         }
                                     }
+
                                     CurrentStopCmd::Running | CurrentStopCmd::Continuing => {
-                                        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                                        let breakpoint_addr = regs.__rip - 1;
-
-                                        #[cfg(target_arch = "aarch64")]
-                                        let breakpoint_addr = regs.__pc;
-
-                                        if let Some(bp) =
-                                            session.active_breakpoints.get_mut(&breakpoint_addr)
-                                        {
-                                            #[cfg(any(
-                                                target_arch = "x86",
-                                                target_arch = "x86_64"
-                                            ))]
-                                            {
-                                                regs.__rip = breakpoint_addr;
-                                            }
-
-                                            kern_return = unsafe {
-                                                mach2::thread_act::thread_set_state(
-                                                    crashed_thread,
-                                                    THREAD_STATE64,
-                                                    std::mem::transmute(&regs),
-                                                    regs_count,
-                                                )
-                                            };
-
-                                            if kern_return != kern_return::KERN_SUCCESS {
-                                                println!("Failed to update regs: {}", kern_return);
-                                            }
-
-                                            session.registers = Some(RegisterViewer { regs });
-                                            bp.breakpoint.disable(child_task_port);
-                                            session.current_cmd = CurrentStopCmd::Completed;
-
-                                            if kern_return != mach2::kern_return::KERN_SUCCESS {
-                                                println!(
-                                                    "Could not revive thread: {}",
-                                                    kern_return
-                                                );
-                                            }
-                                        } else {
-                                            handle_user_debugger_menu(&mut session, rl)?;
-                                        }
+                                        session.current_cmd = CurrentStopCmd::Completed;
                                     }
-                                    _ => unimplemented!(),
+
+                                    other => unimplemented!("{:?}", other),
                                 }
                             }
                             _ => todo!(),

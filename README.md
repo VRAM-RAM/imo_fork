@@ -30,7 +30,13 @@ A Rust-native debugger designed to natively support and smoothly visualize Rust-
 To start a debugging session, provide the target binary path as the primary argument to `imo`:
 
 ```bash
-cargo run /path/to/target_binary
+imo /path/to/target_binary
+```
+
+or
+
+```bash
+cargo run -- /path/to/target_binary
 ```
 
 ## Supported Commands

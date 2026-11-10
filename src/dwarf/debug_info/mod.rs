@@ -11,8 +11,8 @@ use crate::dwarf::debug_info::error::DebugInfoError;
 use crate::dwarf::evaluate_frame_base_bytes;
 use crate::session::error::VariableParseError;
 use crate::session::variable::{DebugStructField, DebugValue, WrapperKind, to_buffer};
+use crate::sys::os;
 use crate::sys::{ProcessMemoryMap, SystemError};
-use crate::sys::{os, registers};
 use crate::sys::{os::syscalls, registers::RegisterViewer};
 use crate::types::UniqueFileId;
 
@@ -44,7 +44,7 @@ pub enum Abi {
     Unknown,
     /// ABI of `macOS` on `arm64`
     ///
-    /// Todo : Check on a Linux Arm device (VM) if it's the same for arm64 on linux, and
+    /// Todo : Check on a Linux Arm device (or VM) if it's the same for arm64 on linux, and
     /// tranform MacOSAAPCS64 into a general AAPCS64 for both MacOS and Linux.
     /// (or distinguish MacOSAAPCS64 and AAPCS64)
     MacOSAAPCS64,

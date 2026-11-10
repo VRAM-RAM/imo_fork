@@ -48,6 +48,10 @@ impl BreakPoint {
     /// - On `x86_64` : Overwrite the lowest byte with 0xCC (INT3) while saving the original byte
     /// - On `arm64` : Overwrite the instruction with [`BRK`] while saving the original instruction
     pub fn enable(&mut self, task_port: u32) -> Result<(), MacOSError> {
+        if self.is_enabled {
+            return Ok(());
+        }
+
         // Read the current memory word
         let word = syscalls::peek_data(task_port, self.addr)?;
 

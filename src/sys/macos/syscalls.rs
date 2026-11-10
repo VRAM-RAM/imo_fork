@@ -88,9 +88,20 @@ pub fn step(port: ProcessHandle, thread: u32) -> Result<(), MacOSError> {
     }
 
     #[cfg(target_arch = "aarch64")]
+
+    println!(
+        "[STEP] Before: PC={:#x}, SP={:#x}, CPSR={:#x}",
+        regs.__pc, regs.__sp, regs.__cpsr
+    );
+
     {
         regs.__cpsr |= SS_FLAG;
     }
+
+    println!(
+        "[STEP] After:  PC={:#x}, SP={:#x}, CPSR={:#x}",
+        regs.__pc, regs.__sp, regs.__cpsr
+    );
 
     let mut kern_return = unsafe {
         mach2::thread_act::thread_set_state(
